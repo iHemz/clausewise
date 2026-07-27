@@ -19,6 +19,7 @@ from services.analyzer import (
     analyze_document,
     judge_finding,
 )
+from tests.conftest import stub_completion
 
 CLAUSE_TEXT = (
     "8.1 Indemnity. The Supplier shall indemnify the Client against any and all losses "
@@ -104,7 +105,7 @@ def test_a_model_failure_is_recorded_not_swallowed(monkeypatch):
     def boom(**_kwargs: object):
         raise RuntimeError("upstream exploded")
 
-    monkeypatch.setattr(analyzer.llm, "parse", boom)
+    monkeypatch.setattr(analyzer.llm, "parse_meta", boom)
 
     result = analyze_clause(a_clause(), page_breaks=[])
 
@@ -120,7 +121,7 @@ def test_a_document_where_every_clause_fails_raises(monkeypatch):
     def boom(**_kwargs: object):
         raise RuntimeError("no API key")
 
-    monkeypatch.setattr(analyzer.llm, "parse", boom)
+    monkeypatch.setattr(analyzer.llm, "parse_meta", boom)
 
     # The worst possible outcome for this product would be returning an empty
     # findings list here: the user would read a clean bill of health from a run
@@ -138,9 +139,9 @@ def test_a_partly_failed_document_still_returns_with_the_count(monkeypatch):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("transient")
-        return ClauseAnalysis(findings=[raw("without limitation")])
+        return stub_completion(ClauseAnalysis(findings=[raw("without limitation")]))
 
-    monkeypatch.setattr(analyzer.llm, "parse", flaky)
+    monkeypatch.setattr(analyzer.llm, "parse_meta", flaky)
 
     result = analyze_document([a_clause(), a_clause(start=1000)], page_breaks=[], judge=False)
 
@@ -204,3 +205,18 @@ def test_a_document_with_no_clauses_makes_no_model_calls():
     result = analyze_document([], page_breaks=[])
     assert result.findings == []
     assert result.clauses_failed == 0
+
+
+def test_provenance_travels_with_the_result(stub_llm: Callable[..., None]):
+    from core.providers import Provider
+
+    stub_llm(
+        analysis=ClauseAnalysis(findings=[raw("without limitation")]),
+        provider=Provider.XAI,
+    )
+
+    result = analyze_document([a_clause()], page_breaks=[], judge=False)
+
+    # Which model produced a finding is part of what the finding is, so it has
+    # to survive all the way to the caller rather than living in a log line.
+    assert result.providers_used == {"xai"}

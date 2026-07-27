@@ -137,6 +137,10 @@ class Analysis(BaseModel):
     # was only partly reviewed, which the reader must know before trusting a
     # short findings list.
     clauses_failed: int = 0
+    # Which model providers produced these findings. More than one means a
+    # mid-run failover; severity calibration differs between models, so that
+    # changes what the result is and the reader is told.
+    providers_used: list[str] = Field(default_factory=list)
     error: str | None = None
 
 

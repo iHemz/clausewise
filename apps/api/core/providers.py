@@ -1,0 +1,437 @@
+"""Model providers behind one interface, so the app can fail over between them.
+
+Two adapters today — Anthropic (Claude) and xAI (Grok). Both speak the same
+small protocol, so ``core.llm`` can try one and fall back to the next without
+knowing anything about either SDK.
+
+The rule that makes failover safe is **narrowness**. Only
+:class:`ProviderUnavailable` triggers a fallback, and it is raised only when the
+provider cannot serve *any* request right now: exhausted credits, a missing or
+rejected key, or hard capacity limits. Everything else — a malformed request, a
+schema the model could not satisfy, a safety refusal — propagates immediately
+from the primary provider.
+
+That distinction matters more than it looks. A broad "retry on any error" chain
+turns one bug into two bills and hides the bug behind a second provider's
+output, which is exactly the kind of quiet wrongness this codebase is built to
+avoid.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Any, Protocol
+
+from pydantic import BaseModel
+
+from core.config import settings
+from core.errors import UpstreamError
+
+logger = logging.getLogger("app.providers")
+
+
+class Provider(StrEnum):
+    ANTHROPIC = "anthropic"
+    XAI = "xai"
+
+
+class ProviderUnavailable(UpstreamError):
+    """This provider cannot serve any request right now — try the next one.
+
+    Deliberately narrow. Raised for exhausted credit, a missing or rejected API
+    key, and hard capacity refusals. Never for a bad request or a bad response,
+    because failing those over would spend money re-running a broken call and
+    bury the cause.
+    """
+
+    def __init__(self, provider: Provider, reason: str) -> None:
+        super().__init__(f"{provider.value} is unavailable: {reason}")
+        self.provider = provider
+        self.reason = reason
+
+
+@dataclass(frozen=True)
+class Usage:
+    """Token counts as reported by the provider, plus a derived cost estimate."""
+
+    provider: Provider
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    cost_usd: float | None = None
+
+
+@dataclass
+class Completion[T]:
+    """A provider's answer plus which provider actually produced it.
+
+    Provenance travels with the value rather than sitting in a module global,
+    because callers run these concurrently across threads — a global "last
+    provider used" would be read by the wrong thread often enough to be
+    misleading, and misleading provenance is worse than none.
+    """
+
+    value: T
+    usage: Usage
+
+
+class LLMProvider(Protocol):
+    """What ``core.llm`` needs from a provider. Adapters implement this."""
+
+    name: Provider
+
+    def is_configured(self) -> bool:
+        """Whether this provider has the credentials it needs to be tried."""
+        ...
+
+    def complete(
+        self, *, prompt: str, system: str | None, max_tokens: int, effort: str, cache_system: bool
+    ) -> Completion[str]: ...
+
+    def parse[T: BaseModel](
+        self,
+        *,
+        prompt: str,
+        schema: type[T],
+        system: str | None,
+        max_tokens: int,
+        effort: str,
+        cache_system: bool,
+    ) -> Completion[T]: ...
+
+
+# --- Shared helpers --------------------------------------------------------
+
+# Substrings that mean "this account cannot make calls", checked against the
+# provider's error message. String matching is unavoidable here: both providers
+# report exhausted credit as a generic 400/403 with the detail only in prose,
+# so there is no status code or error type that distinguishes it from an
+# ordinary bad request. Kept in one visible list rather than scattered through
+# the adapters, so adding a newly-observed phrasing is a one-line change.
+_EXHAUSTED_MARKERS = (
+    "credit balance is too low",
+    "insufficient credits",
+    "insufficient_quota",
+    "exceeded your current quota",
+    "billing",
+    "payment required",
+    "no credits",
+)
+
+
+def _looks_exhausted(message: str) -> bool:
+    lowered = message.lower()
+    return any(marker in lowered for marker in _EXHAUSTED_MARKERS)
+
+
+def _estimate_cost(
+    model: str, pricing: dict[str, tuple[float, float]], inp: int, out: int
+) -> float | None:
+    """USD estimate from published per-million rates, or None if unknown.
+
+    Returns None rather than 0.0 for an unlisted model — a fabricated zero in a
+    cost dashboard is worse than a visible gap.
+    """
+    rate = pricing.get(model)
+    if rate is None:
+        return None
+    return (inp * rate[0] + out * rate[1]) / 1_000_000
+
+
+# --- Anthropic -------------------------------------------------------------
+
+MODEL_ANTHROPIC_SMART = "claude-opus-5"
+MODEL_ANTHROPIC_BALANCED = "claude-sonnet-5"
+MODEL_ANTHROPIC_FAST = "claude-haiku-4-5"
+
+_ANTHROPIC_PRICING: dict[str, tuple[float, float]] = {
+    MODEL_ANTHROPIC_SMART: (5.0, 25.0),
+    MODEL_ANTHROPIC_BALANCED: (3.0, 15.0),
+    MODEL_ANTHROPIC_FAST: (1.0, 5.0),
+}
+
+
+class AnthropicProvider:
+    """Claude via the official Anthropic SDK."""
+
+    name = Provider.ANTHROPIC
+
+    def __init__(self, model: str = MODEL_ANTHROPIC_SMART) -> None:
+        self.model = model
+        self._client: Any = None
+
+    def is_configured(self) -> bool:
+        return bool(settings.anthropic_api_key)
+
+    def _get_client(self) -> Any:
+        import anthropic
+
+        if self._client is None:
+            if not settings.anthropic_api_key:
+                raise ProviderUnavailable(self.name, "ANTHROPIC_API_KEY is not set")
+            self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        return self._client
+
+    def _translate(self, exc: Exception) -> Exception:
+        """Map an SDK error to ProviderUnavailable when it means "cannot serve"."""
+        import anthropic
+
+        if isinstance(exc, anthropic.AuthenticationError | anthropic.PermissionDeniedError):
+            return ProviderUnavailable(self.name, "API key rejected")
+        if isinstance(exc, anthropic.APIStatusError) and _looks_exhausted(str(exc)):
+            return ProviderUnavailable(self.name, "credit balance exhausted")
+        return exc
+
+    def _build(
+        self, *, prompt: str, system: str | None, max_tokens: int, effort: str, cache_system: bool
+    ) -> dict:
+        kwargs: dict = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "output_config": {"effort": effort},
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = (
+                [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+                if cache_system
+                else system
+            )
+        return kwargs
+
+    def _usage(self, response: Any) -> Usage:
+        usage = getattr(response, "usage", None)
+        inp = getattr(usage, "input_tokens", 0) or 0
+        out = getattr(usage, "output_tokens", 0) or 0
+        cached = getattr(usage, "cache_read_input_tokens", 0) or 0
+        return Usage(
+            provider=self.name,
+            model=self.model,
+            input_tokens=inp,
+            output_tokens=out,
+            cached_tokens=cached,
+            cost_usd=_estimate_cost(self.model, _ANTHROPIC_PRICING, inp, out),
+        )
+
+    def _guard_refusal(self, response: Any) -> None:
+        """A safety decline arrives as a normal 200 with empty content."""
+        if getattr(response, "stop_reason", None) == "refusal":
+            details = getattr(response, "stop_details", None)
+            category = getattr(details, "category", None) or "unspecified"
+            # Not ProviderUnavailable: another provider would likely decline the
+            # same prompt, and silently shopping a refused request around
+            # providers is not behaviour this codebase should have.
+            raise UpstreamError(f"Claude declined this request (category: {category}).")
+
+    def complete(
+        self, *, prompt: str, system: str | None, max_tokens: int, effort: str, cache_system: bool
+    ) -> Completion[str]:
+        kwargs = self._build(
+            prompt=prompt,
+            system=system,
+            max_tokens=max_tokens,
+            effort=effort,
+            cache_system=cache_system,
+        )
+        try:
+            response = self._get_client().messages.create(**kwargs)
+        except ProviderUnavailable:
+            raise
+        except Exception as exc:
+            raise self._translate(exc) from exc
+
+        self._guard_refusal(response)
+        # Thinking is on by default on the smart tier, so content[0] is often a
+        # thinking block rather than the answer.
+        text = next(
+            (
+                b.text
+                for b in getattr(response, "content", []) or []
+                if getattr(b, "type", "") == "text"
+            ),
+            "",
+        )
+        return Completion(value=text, usage=self._usage(response))
+
+    def parse[T: BaseModel](
+        self,
+        *,
+        prompt: str,
+        schema: type[T],
+        system: str | None,
+        max_tokens: int,
+        effort: str,
+        cache_system: bool,
+    ) -> Completion[T]:
+        kwargs = self._build(
+            prompt=prompt,
+            system=system,
+            max_tokens=max_tokens,
+            effort=effort,
+            cache_system=cache_system,
+        )
+        # The schema goes at the top level as `output_format`, not inside
+        # `output_config` — putting the class in `output_config` makes the SDK
+        # try to JSON-serialize the Pydantic class itself.
+        kwargs["output_format"] = schema
+
+        try:
+            response = self._get_client().messages.parse(**kwargs)
+        except ProviderUnavailable:
+            raise
+        except Exception as exc:
+            raise self._translate(exc) from exc
+
+        self._guard_refusal(response)
+        parsed = getattr(response, "parsed_output", None)
+        if parsed is None:
+            raise UpstreamError(f"Claude returned no output matching {schema.__name__}.")
+        return Completion(value=parsed, usage=self._usage(response))
+
+
+# --- xAI (Grok) ------------------------------------------------------------
+
+XAI_BASE_URL = "https://api.x.ai/v1"
+
+MODEL_XAI_SMART = "grok-4.5"
+MODEL_XAI_BALANCED = "grok-4.3"
+
+# Published rates vary by context length; the lower figure is used, so the
+# estimate is a floor rather than a promise.
+_XAI_PRICING: dict[str, tuple[float, float]] = {
+    MODEL_XAI_SMART: (2.0, 6.0),
+    MODEL_XAI_BALANCED: (1.25, 2.5),
+}
+
+
+class XAIProvider:
+    """Grok via xAI's OpenAI-compatible endpoint.
+
+    The OpenAI SDK pointed at ``api.x.ai`` is used rather than ``xai-sdk``: it
+    is the better-trodden path, and ``chat.completions.parse`` gives the same
+    server-enforced Pydantic schema guarantee the Anthropic adapter relies on.
+    Keeping that guarantee on both providers is what makes them substitutable —
+    a fallback that returned unvalidated prose would quietly break every caller
+    that depends on structured output.
+    """
+
+    name = Provider.XAI
+
+    def __init__(self, model: str = MODEL_XAI_SMART) -> None:
+        self.model = model
+        self._client: Any = None
+
+    def is_configured(self) -> bool:
+        return bool(settings.xai_api_key)
+
+    def _get_client(self) -> Any:
+        import openai
+
+        if self._client is None:
+            if not settings.xai_api_key:
+                raise ProviderUnavailable(self.name, "XAI_API_KEY is not set")
+            self._client = openai.OpenAI(api_key=settings.xai_api_key, base_url=XAI_BASE_URL)
+        return self._client
+
+    def _translate(self, exc: Exception) -> Exception:
+        import openai
+
+        if isinstance(exc, openai.AuthenticationError | openai.PermissionDeniedError):
+            return ProviderUnavailable(self.name, "API key rejected")
+        if isinstance(exc, openai.APIStatusError) and _looks_exhausted(str(exc)):
+            return ProviderUnavailable(self.name, "credit balance exhausted")
+        return exc
+
+    def _messages(self, prompt: str, system: str | None) -> list[dict]:
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        return messages
+
+    def _usage(self, response: Any) -> Usage:
+        usage = getattr(response, "usage", None)
+        inp = getattr(usage, "prompt_tokens", 0) or 0
+        out = getattr(usage, "completion_tokens", 0) or 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        cached = getattr(details, "cached_tokens", 0) or 0
+        return Usage(
+            provider=self.name,
+            model=self.model,
+            input_tokens=inp,
+            output_tokens=out,
+            cached_tokens=cached,
+            cost_usd=_estimate_cost(self.model, _XAI_PRICING, inp, out),
+        )
+
+    def complete(
+        self, *, prompt: str, system: str | None, max_tokens: int, effort: str, cache_system: bool
+    ) -> Completion[str]:
+        # `effort` and `cache_system` are Anthropic concepts. xAI caches
+        # automatically and exposes no equivalent knob, so they are accepted and
+        # ignored rather than translated into a guess that might 400.
+        del effort, cache_system
+        try:
+            response = self._get_client().chat.completions.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                messages=self._messages(prompt, system),
+            )
+        except ProviderUnavailable:
+            raise
+        except Exception as exc:
+            raise self._translate(exc) from exc
+
+        return Completion(
+            value=response.choices[0].message.content or "", usage=self._usage(response)
+        )
+
+    def parse[T: BaseModel](
+        self,
+        *,
+        prompt: str,
+        schema: type[T],
+        system: str | None,
+        max_tokens: int,
+        effort: str,
+        cache_system: bool,
+    ) -> Completion[T]:
+        del effort, cache_system
+        try:
+            response = self._get_client().chat.completions.parse(
+                model=self.model,
+                max_tokens=max_tokens,
+                messages=self._messages(prompt, system),
+                response_format=schema,
+            )
+        except ProviderUnavailable:
+            raise
+        except Exception as exc:
+            raise self._translate(exc) from exc
+
+        message = response.choices[0].message
+        if getattr(message, "refusal", None):
+            raise UpstreamError(f"Grok declined this request: {message.refusal}")
+
+        parsed = getattr(message, "parsed", None)
+        if parsed is None:
+            raise UpstreamError(f"Grok returned no output matching {schema.__name__}.")
+        return Completion(value=parsed, usage=self._usage(response))
+
+
+_REGISTRY: dict[Provider, LLMProvider] = {}
+
+
+def get_provider(name: Provider) -> LLMProvider:
+    """Return the shared adapter for ``name``, building it on first use."""
+    if name not in _REGISTRY:
+        _REGISTRY[name] = AnthropicProvider() if name is Provider.ANTHROPIC else XAIProvider()
+    return _REGISTRY[name]
+
+
+def reset_providers() -> None:
+    """Drop cached adapters. Used by tests that swap credentials."""
+    _REGISTRY.clear()

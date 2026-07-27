@@ -50,10 +50,38 @@ model's guess is a weak input to that ordering. A separate call re-scores each f
 the clause alone, without seeing the first model's reasoning. Disagreement is **shown**, not
 averaged away — a disputed finding is flagged in the UI.
 
+## Provider failover
+
+Claude is primary; Grok takes over automatically when the Anthropic account cannot serve —
+exhausted credit, a rejected key, hard capacity. Set both keys in `apps/api/.env`:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+XAI_API_KEY=xai-...
+LLM_PROVIDER=anthropic
+LLM_FALLBACK_PROVIDERS=xai     # empty disables failover
+```
+
+Two design decisions are worth stating, because the obvious version of this feature is
+wrong in both:
+
+**Failover is narrow.** Only "this provider cannot serve anything right now" advances the
+chain. A malformed request, a schema the model could not satisfy, or a safety refusal fails
+immediately on the primary. A broad "retry anywhere on any error" chain turns one bug into
+two bills and hides it behind whatever the fallback happened to say.
+
+**Failover is visible.** `providers_used` travels with the result and the UI says so when a
+document was reviewed by more than one model. Severity is calibrated differently by each,
+so a mixed-provider analysis is a different artifact from a single-provider one — quietly
+swapping models mid-document would undermine the same trust the citations exist to build.
+
+Both providers enforce the response schema server-side, so the grounding contract is
+identical either way: a finding still has to quote text that exists, or it is dropped.
+
 ## Running it
 
-Prerequisites: Node 24+, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/), and an
-Anthropic API key.
+Prerequisites: Node 24+, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/), and at
+least one model-provider key — Anthropic, xAI, or both.
 
 ```bash
 pnpm install

@@ -70,6 +70,17 @@ export function AnalysisView() {
         </button>
       </header>
 
+      {analysis.providers_used.length > 1 && (
+        <p
+          role="status"
+          className="border-warning/40 bg-warning/10 text-warning mb-4 rounded-xl border p-3 text-sm"
+        >
+          Two model providers reviewed this document ({analysis.providers_used.join(', ')}) — the
+          primary ran out of capacity partway through and the fallback took over. Severity is
+          calibrated differently by each, so compare findings with that in mind.
+        </p>
+      )}
+
       {analysis.clauses_failed > 0 && (
         <p
           role="alert"

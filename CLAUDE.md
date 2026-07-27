@@ -31,8 +31,20 @@ and propose something else.
 
 ## Model usage
 
-- Every Claude call goes through `apps/api/core/llm.py`. Never construct an
-  `anthropic.Anthropic()` elsewhere.
+- Every model call goes through `apps/api/core/llm.py`. Never construct a provider
+  SDK client elsewhere — `core/providers.py` is the only module that imports one.
+- **Two providers, with failover.** Anthropic (Claude) is primary; xAI (Grok) takes
+  over when Anthropic cannot serve at all. Configured by `LLM_PROVIDER` and
+  `LLM_FALLBACK_PROVIDERS`.
+- **Failover is deliberately narrow and must stay that way.** Only
+  `ProviderUnavailable` — exhausted credit, rejected key, hard capacity — advances
+  to the next provider. A malformed request, a schema failure, or a refusal fails
+  immediately on the primary. Widening this would re-run bugs on a second account
+  and hide the cause behind the fallback's output.
+- **Provenance is part of the result.** Use `llm.parse_meta()` when it matters who
+  answered; `Analysis.providers_used` carries it to the UI. A document reviewed by
+  two models with different severity calibration is not the same artifact as one
+  reviewed by either alone, and the reader is told.
 - Use `llm.parse()` with a Pydantic schema for anything structured. The API enforces the
   schema, so there is no JSON to repair — do not add fence-stripping or brace-trimming.
 - The analyzer's system prompt is identical for every clause, so it is cached

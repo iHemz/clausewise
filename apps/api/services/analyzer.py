@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 
 from core import llm
 from core.errors import UpstreamError
+from core.providers import Provider
 from domain.contracts import (
     Clause,
     Finding,
@@ -144,6 +145,11 @@ class DocumentResult:
     #: Clauses whose analysis call failed. Partial failure still returns a
     #: result, but the count travels with it so the UI can say so.
     clauses_failed: int = 0
+    #: Every model provider that served part of this analysis. More than one
+    #: means a mid-run failover, which the reader deserves to know about:
+    #: severity calibration differs between models, so a document reviewed by
+    #: two of them is not the same artifact as one reviewed by either alone.
+    providers_used: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -160,6 +166,8 @@ class ClauseResult:
     findings: list[Finding]
     dropped: int = 0
     failed: bool = False
+    #: Which provider answered, when one did.
+    provider: Provider | None = None
 
 
 def analyze_clause(clause: Clause, page_breaks: list[int]) -> ClauseResult:
@@ -175,7 +183,7 @@ def analyze_clause(clause: Clause, page_breaks: list[int]) -> ClauseResult:
     )
 
     try:
-        analysis = llm.parse(
+        completion = llm.parse_meta(
             prompt=prompt,
             schema=ClauseAnalysis,
             system=ANALYZER_SYSTEM,
@@ -188,6 +196,9 @@ def analyze_clause(clause: Clause, page_breaks: list[int]) -> ClauseResult:
     except Exception:
         logger.exception("clause_analysis_failed", extra={"clause_id": clause.id})
         return ClauseResult(findings=[], failed=True)
+
+    analysis = completion.value
+    provider = completion.usage.provider
 
     findings: list[Finding] = []
     dropped = 0
@@ -215,7 +226,7 @@ def analyze_clause(clause: Clause, page_breaks: list[int]) -> ClauseResult:
             )
         )
 
-    return ClauseResult(findings=findings, dropped=dropped)
+    return ClauseResult(findings=findings, dropped=dropped, provider=provider)
 
 
 def judge_finding(finding: Finding, clause_text: str) -> Finding:
@@ -244,6 +255,8 @@ def judge_finding(finding: Finding, clause_text: str) -> Finding:
             max_tokens=1000,
         )
     except Exception:
+        # A failed judge pass costs the second opinion on one finding, not the
+        # finding itself — the analyzer's severity stands, unannotated.
         logger.exception("judge_failed", extra={"clause_id": finding.clause_id})
         return finding
 
@@ -282,6 +295,12 @@ def analyze_document(
 
     findings = [finding for result in results for finding in result.findings]
     dropped = sum(result.dropped for result in results)
+    providers = {r.provider.value for r in results if r.provider is not None}
+
+    if len(providers) > 1:
+        # Worth a warning, not just a field: two models with different severity
+        # calibration each reviewed part of one document.
+        logger.warning("mixed_provider_analysis", extra={"providers": sorted(providers)})
 
     if judge and findings:
         clause_text_by_id = {clause.id: clause.text for clause in clauses}
@@ -293,4 +312,9 @@ def analyze_document(
                 )
             )
 
-    return DocumentResult(findings=sort_findings(findings), dropped=dropped, clauses_failed=failed)
+    return DocumentResult(
+        findings=sort_findings(findings),
+        dropped=dropped,
+        clauses_failed=failed,
+        providers_used=providers,
+    )

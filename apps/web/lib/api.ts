@@ -146,6 +146,12 @@ export interface Analysis {
   dropped_ungrounded: number;
   /** Clauses whose analysis failed — the document was only partly reviewed. */
   clauses_failed: number;
+  /**
+   * Model providers that produced these findings. More than one means a
+   * mid-run failover — worth showing, because severity calibration differs
+   * between models.
+   */
+  providers_used: string[];
   error: string | null;
 }
 

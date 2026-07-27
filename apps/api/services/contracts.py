@@ -49,6 +49,7 @@ class ContractsService:
             findings=result.findings,
             dropped_ungrounded=result.dropped,
             clauses_failed=result.clauses_failed,
+            providers_used=sorted(result.providers_used),
         )
 
         logger.info(
@@ -62,6 +63,7 @@ class ContractsService:
                 "finding_count": len(result.findings),
                 "dropped_ungrounded": result.dropped,
                 "clauses_failed": result.clauses_failed,
+                "providers_used": sorted(result.providers_used),
             },
         )
         return self._repository.add(analysis)
