@@ -68,8 +68,17 @@ cd apps/api && uv sync && uv run uvicorn main:app --reload
 pnpm --filter web dev
 ```
 
-Open http://localhost:3000 and drop in a contract. Two synthetic samples live in
-[`apps/api/evals/contracts/`](apps/api/evals/contracts/).
+Open http://localhost:3000 and drop in a contract. Ready-made samples live in
+[`apps/api/evals/contracts/`](apps/api/evals/contracts/) — each one as `.pdf` and `.docx`:
+
+- **`saas-msa.pdf`** — 2 pages, 13 clauses, 10 risk categories. The one to demo with:
+  it spans a page break, so findings come back with real page numbers.
+- **`contractor-agreement.pdf`** — 1 page. Overbroad IP assignment, a five-year worldwide
+  non-compete, an uncapped indemnity.
+
+Both are generated from the `.txt` sources next to them via
+`uv run python -m evals.make_samples`, so the text is reviewable in a diff rather than
+locked in a binary.
 
 ## Evals
 

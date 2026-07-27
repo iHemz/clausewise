@@ -5,10 +5,26 @@ regress against. Change the rubric or the prompt, re-run, and see whether recall
 
 ```bash
 cd apps/api
-uv run python -m evals.make_samples   # regenerate the .docx from the .txt sources
+uv run python -m evals.make_samples   # regenerate the .docx and .pdf from the .txt sources
 uv run python -m evals.run            # full pipeline, including the judge pass
 uv run python -m evals.run --no-judge # analysis only — roughly half the token spend
 ```
+
+## Sample contracts
+
+`contracts/` holds each sample three ways: the `.txt` source of record, plus a generated
+`.docx` and `.pdf`. Use them to test the app by hand:
+
+| file | pages | what it exercises |
+| --- | --- | --- |
+| `saas-msa.pdf` | 2 | The PDF path, including a clause that straddles a page break — so citations come back with real page numbers |
+| `saas-msa.docx` | — | The DOCX path |
+| `contractor-agreement.pdf` | 1 | Single-page PDF; IP assignment, non-compete, uncapped indemnity |
+| `contractor-agreement.docx` | — | The DOCX path |
+
+The PDF is typeset like a real agreement — justified serif body, wrapping mid-sentence
+across lines and pages. That is deliberate: it is what makes the whitespace-tolerant quote
+matching earn its keep. A tidy, machine-clean PDF would test almost nothing.
 
 **This makes real Claude calls and costs real money.** It is deliberately not wired into
 CI; run it when you change a prompt, the rubric, or the segmenter.
@@ -32,8 +48,9 @@ described something it could not point to, so it was not shown to the user.
 
 ## Adding a case
 
-1. Write the contract as `contracts/<name>.txt`. Paragraphs are separated by blank lines.
-2. Run `uv run python -m evals.make_samples` to produce the `.docx`.
+1. Write the contract as `contracts/<name>.txt`. Paragraphs are separated by blank lines;
+   the first block is treated as the title.
+2. Run `uv run python -m evals.make_samples` to produce the `.docx` and `.pdf`.
 3. Add an entry to `cases.json`:
 
 ```json
