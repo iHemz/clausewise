@@ -59,6 +59,9 @@ class Score:
     false_positives: int = 0
     false_negatives: int = 0
     dropped_ungrounded: int = 0
+    #: Clauses whose analysis call failed outright. Non-zero means the run was
+    #: degraded and the scores below understate real recall.
+    clauses_failed: int = 0
     severity_agreements: int = 0
     severity_comparisons: int = 0
 
@@ -170,15 +173,17 @@ def run(*, judge: bool) -> int:
 
         extracted = extract(case.path.name, case.path.read_bytes())
         clauses = segment(extracted.text)
-        findings, dropped = analyze_document(clauses, extracted.page_breaks, judge=judge)
+        analysis = analyze_document(clauses, extracted.page_breaks, judge=judge)
 
-        score = score_case(case, extracted.text, findings, dropped)
+        score = score_case(case, extracted.text, analysis.findings, analysis.dropped)
+        score.clauses_failed = analysis.clauses_failed
         rows.append((case.name, score))
 
         total.true_positives += score.true_positives
         total.false_positives += score.false_positives
         total.false_negatives += score.false_negatives
         total.dropped_ungrounded += score.dropped_ungrounded
+        total.clauses_failed += score.clauses_failed
         total.severity_agreements += score.severity_agreements
         total.severity_comparisons += score.severity_comparisons
 
@@ -198,6 +203,12 @@ def run(*, judge: bool) -> int:
     )
     print(f"\nSeverity agreement with labels: {total.severity_agreement_report}")
     print(f"Findings dropped as ungrounded:  {total.dropped_ungrounded}")
+    if total.clauses_failed:
+        print(
+            f"\n!! {total.clauses_failed} clause(s) failed to analyze — this run was "
+            "degraded and the scores above understate real recall. Re-run before "
+            "drawing any conclusion from them."
+        )
     print(
         "\nDropped findings are the honesty gate working: the model described "
         "something it could not quote, so it was not shown."

@@ -133,6 +133,10 @@ class Analysis(BaseModel):
     # Findings the model produced but that failed grounding. Surfaced rather
     # than hidden — an honest tool shows what it threw away and why.
     dropped_ungrounded: int = 0
+    # Clauses whose analysis call failed outright. Non-zero means the document
+    # was only partly reviewed, which the reader must know before trusting a
+    # short findings list.
+    clauses_failed: int = 0
     error: str | None = None
 
 

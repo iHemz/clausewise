@@ -35,7 +35,7 @@ class ContractsService:
                 "scan, a form, or not a contract."
             )
 
-        findings, dropped = analyze_document(clauses, extracted.page_breaks, judge=judge)
+        result = analyze_document(clauses, extracted.page_breaks, judge=judge)
 
         analysis = Analysis(
             id=str(uuid4()),
@@ -46,8 +46,9 @@ class ContractsService:
                 clauses=clauses,
                 page_count=extracted.page_count,
             ),
-            findings=findings,
-            dropped_ungrounded=dropped,
+            findings=result.findings,
+            dropped_ungrounded=result.dropped,
+            clauses_failed=result.clauses_failed,
         )
 
         logger.info(
@@ -58,8 +59,9 @@ class ContractsService:
                 # logging raises KeyError rather than shadowing it.
                 "source_filename": filename,
                 "clause_count": len(clauses),
-                "finding_count": len(findings),
-                "dropped_ungrounded": dropped,
+                "finding_count": len(result.findings),
+                "dropped_ungrounded": result.dropped,
+                "clauses_failed": result.clauses_failed,
             },
         )
         return self._repository.add(analysis)

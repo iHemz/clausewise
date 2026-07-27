@@ -70,6 +70,17 @@ export function AnalysisView() {
         </button>
       </header>
 
+      {analysis.clauses_failed > 0 && (
+        <p
+          role="alert"
+          className="border-warning/40 bg-warning/10 text-warning mb-4 rounded-xl border p-3 text-sm"
+        >
+          {analysis.clauses_failed} of {analysis.document.clauses.length} clauses could not be
+          analyzed, so this document was only partly reviewed. Treat the findings below as
+          incomplete rather than as a clean result.
+        </p>
+      )}
+
       <SeveritySummary findings={analysis.findings} />
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">

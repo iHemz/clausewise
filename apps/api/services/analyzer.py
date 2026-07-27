@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
 from core import llm
+from core.errors import UpstreamError
 from domain.contracts import (
     Clause,
     Finding,
@@ -37,9 +39,10 @@ from domain.contracts import (
 logger = logging.getLogger("clausewise.analyzer")
 
 # Clause analysis is I/O-bound and independent per clause, so the wall-clock
-# cost is one round trip rather than N. Bounded because every worker is a paid
-# API call and the account has rate limits.
-MAX_CONCURRENCY = 6
+# cost is closer to one round trip than to N. Kept low deliberately: pushing it
+# higher measurably increases 529 Overloaded responses, and a retried request
+# costs more wall-clock time than the parallelism saved.
+MAX_CONCURRENCY = 4
 
 
 # --- Schemas the model is constrained to ----------------------------------
@@ -132,12 +135,39 @@ unusual wording that costs nothing is still low.\
 """
 
 
-def analyze_clause(clause: Clause, page_breaks: list[int]) -> tuple[list[Finding], int]:
-    """Analyze one clause. Returns its grounded findings and how many were dropped.
+@dataclass
+class DocumentResult:
+    """The outcome of analyzing a whole document."""
 
-    Failures are contained to the clause: a single bad response should cost one
-    clause's findings, not the whole document. The caller reports the drop
-    count so the UI can be honest about what was discarded.
+    findings: list[Finding] = field(default_factory=list)
+    dropped: int = 0
+    #: Clauses whose analysis call failed. Partial failure still returns a
+    #: result, but the count travels with it so the UI can say so.
+    clauses_failed: int = 0
+
+
+@dataclass
+class ClauseResult:
+    """What one clause's analysis produced, including whether it failed at all.
+
+    ``failed`` is tracked separately from an empty ``findings`` list because the
+    two mean opposite things: an unremarkable clause legitimately yields no
+    findings, whereas a failed call yields none because nothing was reviewed.
+    Collapsing them is how a missing API key turns into a confident
+    "no risks found".
+    """
+
+    findings: list[Finding]
+    dropped: int = 0
+    failed: bool = False
+
+
+def analyze_clause(clause: Clause, page_breaks: list[int]) -> ClauseResult:
+    """Analyze one clause and ground every finding it produces.
+
+    Failures are contained to the clause — a single bad response should cost one
+    clause, not the document — but they are *recorded*, so the caller can tell
+    the difference between a quiet contract and a broken pipeline.
     """
     prompt = (
         "Review this contract clause and report any risks against the rubric.\n\n"
@@ -157,7 +187,7 @@ def analyze_clause(clause: Clause, page_breaks: list[int]) -> tuple[list[Finding
         )
     except Exception:
         logger.exception("clause_analysis_failed", extra={"clause_id": clause.id})
-        return [], 0
+        return ClauseResult(findings=[], failed=True)
 
     findings: list[Finding] = []
     dropped = 0
@@ -185,7 +215,7 @@ def analyze_clause(clause: Clause, page_breaks: list[int]) -> tuple[list[Finding
             )
         )
 
-    return findings, dropped
+    return ClauseResult(findings=findings, dropped=dropped)
 
 
 def judge_finding(finding: Finding, clause_text: str) -> Finding:
@@ -227,16 +257,31 @@ def analyze_document(
     page_breaks: list[int],
     *,
     judge: bool = True,
-) -> tuple[list[Finding], int]:
-    """Run the full pipeline over every clause. Returns findings and drop count."""
+) -> DocumentResult:
+    """Run the full pipeline over every clause.
+
+    Raises ``UpstreamError`` when *every* clause failed. Returning an empty
+    result there would be the worst possible outcome for this product: the user
+    would read "no risks found" from a run in which nothing was actually
+    reviewed. A missing API key, an expired key, or a total outage must look
+    like a failure, not like a clean bill of health.
+    """
     if not clauses:
-        return [], 0
+        return DocumentResult(findings=[])
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as pool:
         results = list(pool.map(lambda c: analyze_clause(c, page_breaks), clauses))
 
-    findings = [finding for clause_findings, _ in results for finding in clause_findings]
-    dropped = sum(count for _, count in results)
+    failed = sum(1 for result in results if result.failed)
+    if failed == len(clauses):
+        raise UpstreamError(
+            f"Every one of the {len(clauses)} clauses failed to analyze. "
+            "The model could not be reached — check ANTHROPIC_API_KEY and the "
+            "service status. No conclusions can be drawn from this document."
+        )
+
+    findings = [finding for result in results for finding in result.findings]
+    dropped = sum(result.dropped for result in results)
 
     if judge and findings:
         clause_text_by_id = {clause.id: clause.text for clause in clauses}
@@ -248,4 +293,4 @@ def analyze_document(
                 )
             )
 
-    return sort_findings(findings), dropped
+    return DocumentResult(findings=sort_findings(findings), dropped=dropped, clauses_failed=failed)

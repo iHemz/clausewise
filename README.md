@@ -83,6 +83,21 @@ cd apps/api && uv run python -m evals.run
 It reports precision, recall, F1, severity agreement, and how many findings were dropped as
 ungrounded. It makes real Claude calls, so it is deliberately not wired into CI.
 
+Latest run against `claude-opus-5`:
+
+| case                 |    P |    R |   F1 | TP | FP | FN |
+| -------------------- | ---: | ---: | ---: | -: | -: | -: |
+| saas-msa             | 0.67 | 0.91 | 0.77 | 10 |  5 |  1 |
+| contractor-agreement | 0.75 | 1.00 | 0.86 |  6 |  2 |  0 |
+| **total**            | 0.70 | 0.94 | 0.80 | 16 |  7 |  1 |
+
+Severity agreement with the human labels: 75% (12/16). Findings dropped as ungrounded: 0.
+
+Read that honestly. Recall is high because the samples were written to contain these
+patterns. The 7 false positives are mostly real risks I did not bother to label rather
+than hallucinations — which is exactly the ambiguity a two-contract set cannot resolve,
+and the reason the numbers are directional rather than a claim.
+
 The contracts are synthetic and the set is tiny (2 contracts, 17 labels) — enough to catch
 a prompt change that halves recall, not evidence about real-world accuracy. That limitation
 is stated plainly in [`apps/api/evals/README.md`](apps/api/evals/README.md) rather than

@@ -7,6 +7,9 @@ pipeline only ever surface findings it can prove?**
 
 from collections.abc import Callable
 
+import pytest
+
+from core.errors import UpstreamError
 from domain.contracts import Clause, Severity
 from services.analyzer import (
     ClauseAnalysis,
@@ -47,11 +50,12 @@ def raw(quote: str, severity: Severity = Severity.HIGH) -> RawFinding:
 def test_a_grounded_finding_is_kept_with_a_real_span(stub_llm: Callable[..., None]):
     stub_llm(analysis=ClauseAnalysis(findings=[raw("without limitation")]))
 
-    findings, dropped = analyze_clause(a_clause(start=500), page_breaks=[])
+    result = analyze_clause(a_clause(start=500), page_breaks=[])
 
-    assert dropped == 0
-    assert len(findings) == 1
-    citation = findings[0].citation
+    assert result.dropped == 0
+    assert not result.failed
+    assert len(result.findings) == 1
+    citation = result.findings[0].citation
     # The span is absolute, into the document, not relative to the clause.
     assert citation.start >= 500
     assert citation.quote == "without limitation"
@@ -62,10 +66,11 @@ def test_an_ungrounded_finding_is_dropped_not_shown(stub_llm: Callable[..., None
     # through to, so the finding must not reach the user.
     stub_llm(analysis=ClauseAnalysis(findings=[raw("the supplier takes unlimited risk")]))
 
-    findings, dropped = analyze_clause(a_clause(), page_breaks=[])
+    result = analyze_clause(a_clause(), page_breaks=[])
 
-    assert findings == []
-    assert dropped == 1
+    assert result.findings == []
+    assert result.dropped == 1
+    assert not result.failed
 
 
 def test_grounded_and_ungrounded_findings_are_separated(stub_llm: Callable[..., None]):
@@ -75,10 +80,10 @@ def test_grounded_and_ungrounded_findings_are_separated(stub_llm: Callable[..., 
         )
     )
 
-    findings, dropped = analyze_clause(a_clause(), page_breaks=[])
+    result = analyze_clause(a_clause(), page_breaks=[])
 
-    assert len(findings) == 1
-    assert dropped == 1
+    assert len(result.findings) == 1
+    assert result.dropped == 1
 
 
 def test_an_empty_analysis_is_a_valid_answer(stub_llm: Callable[..., None]):
@@ -86,13 +91,14 @@ def test_an_empty_analysis_is_a_valid_answer(stub_llm: Callable[..., None]):
     # look useful is the failure mode this guards.
     stub_llm(analysis=ClauseAnalysis(findings=[]))
 
-    findings, dropped = analyze_clause(a_clause(), page_breaks=[])
+    result = analyze_clause(a_clause(), page_breaks=[])
 
-    assert findings == []
-    assert dropped == 0
+    assert result.findings == []
+    assert result.dropped == 0
+    assert not result.failed
 
 
-def test_a_model_failure_costs_one_clause_not_the_document(monkeypatch):
+def test_a_model_failure_is_recorded_not_swallowed(monkeypatch):
     from services import analyzer
 
     def boom(**_kwargs: object):
@@ -100,10 +106,48 @@ def test_a_model_failure_costs_one_clause_not_the_document(monkeypatch):
 
     monkeypatch.setattr(analyzer.llm, "parse", boom)
 
-    findings, dropped = analyze_clause(a_clause(), page_breaks=[])
+    result = analyze_clause(a_clause(), page_breaks=[])
 
-    assert findings == []
-    assert dropped == 0
+    # A failure must stay distinguishable from a clean clause, or a broken
+    # pipeline reads to the user as "no risks found".
+    assert result.findings == []
+    assert result.failed
+
+
+def test_a_document_where_every_clause_fails_raises(monkeypatch):
+    from services import analyzer
+
+    def boom(**_kwargs: object):
+        raise RuntimeError("no API key")
+
+    monkeypatch.setattr(analyzer.llm, "parse", boom)
+
+    # The worst possible outcome for this product would be returning an empty
+    # findings list here: the user would read a clean bill of health from a run
+    # in which nothing was actually reviewed.
+    with pytest.raises(UpstreamError, match="failed to analyze"):
+        analyze_document([a_clause()], page_breaks=[], judge=False)
+
+
+def test_a_partly_failed_document_still_returns_with_the_count(monkeypatch):
+    from services import analyzer
+
+    calls = {"n": 0}
+
+    def flaky(**_kwargs: object):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient")
+        return ClauseAnalysis(findings=[raw("without limitation")])
+
+    monkeypatch.setattr(analyzer.llm, "parse", flaky)
+
+    result = analyze_document([a_clause(), a_clause(start=1000)], page_breaks=[], judge=False)
+
+    # Partial failure is survivable, but the count travels with the result so
+    # the reader knows the document was only partly reviewed.
+    assert result.clauses_failed == 1
+    assert len(result.findings) == 1
 
 
 def test_the_judge_annotates_rather_than_overwrites(stub_llm: Callable[..., None]):
@@ -112,8 +156,7 @@ def test_the_judge_annotates_rather_than_overwrites(stub_llm: Callable[..., None
         judgement=SeverityJudgement(severity=Severity.MEDIUM, note="Capped elsewhere."),
     )
 
-    findings, _ = analyze_clause(a_clause(), page_breaks=[])
-    judged = judge_finding(findings[0], CLAUSE_TEXT)
+    judged = judge_finding(analyze_clause(a_clause(), page_breaks=[]).findings[0], CLAUSE_TEXT)
 
     # Disagreement is information for the reviewer, not something to average away.
     assert judged.severity is Severity.HIGH
@@ -127,7 +170,7 @@ def test_the_judge_agreeing_is_not_a_dispute(stub_llm: Callable[..., None]):
         judgement=SeverityJudgement(severity=Severity.HIGH, note="Unlimited exposure."),
     )
 
-    findings, _ = analyze_clause(a_clause(), page_breaks=[])
+    findings = analyze_clause(a_clause(), page_breaks=[]).findings
     assert not judge_finding(findings[0], CLAUSE_TEXT).severity_disputed
 
 
@@ -135,10 +178,10 @@ def test_analyze_document_can_skip_the_judge_pass(stub_llm: Callable[..., None])
     # No judgement is stubbed, so the stub raises if the judge pass runs.
     stub_llm(analysis=ClauseAnalysis(findings=[raw("without limitation")]))
 
-    findings, _ = analyze_document([a_clause()], page_breaks=[], judge=False)
+    result = analyze_document([a_clause()], page_breaks=[], judge=False)
 
-    assert len(findings) == 1
-    assert findings[0].judge_severity is None
+    assert len(result.findings) == 1
+    assert result.findings[0].judge_severity is None
 
 
 def test_analyze_document_returns_highest_severity_first(stub_llm: Callable[..., None]):
@@ -151,11 +194,13 @@ def test_analyze_document_returns_highest_severity_first(stub_llm: Callable[...,
         )
     )
 
-    findings, _ = analyze_document([a_clause()], page_breaks=[], judge=False)
+    result = analyze_document([a_clause()], page_breaks=[], judge=False)
 
-    assert [f.severity for f in findings] == [Severity.HIGH, Severity.LOW]
+    assert [f.severity for f in result.findings] == [Severity.HIGH, Severity.LOW]
 
 
 def test_a_document_with_no_clauses_makes_no_model_calls():
     # No stub installed — a real call would fail, proving none is made.
-    assert analyze_document([], page_breaks=[]) == ([], 0)
+    result = analyze_document([], page_breaks=[])
+    assert result.findings == []
+    assert result.clauses_failed == 0

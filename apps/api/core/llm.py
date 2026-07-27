@@ -21,7 +21,7 @@ from typing import Literal
 
 import anthropic
 from pydantic import BaseModel
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_random_exponential
 
 from core.config import settings
 from core.errors import UpstreamError
@@ -44,13 +44,21 @@ _PRICING: dict[str, tuple[float, float]] = {
     MODEL_FAST: (1.0, 5.0),
 }
 
-# Retry only on failures that a second attempt can plausibly fix. A 400 from a
-# malformed request is a bug — retrying it just burns time.
-_RETRYABLE = (
-    anthropic.RateLimitError,
-    anthropic.InternalServerError,
-    anthropic.APIConnectionError,
-)
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Whether a second attempt could plausibly succeed.
+
+    Decided by HTTP status rather than by exception class. Listing classes is
+    the obvious approach and it is subtly wrong: `OverloadedError` (529) is a
+    sibling of `InternalServerError`, not a subclass, so a class tuple that
+    looks exhaustive silently drops the single most common transient failure
+    under concurrency. Anything 429 or 5xx is worth retrying; a 400 from a
+    malformed request is a bug, and retrying it just burns time and money.
+    """
+    if isinstance(exc, anthropic.APIConnectionError | anthropic.APITimeoutError):
+        return True
+    status = getattr(exc, "status_code", None)
+    return isinstance(status, int) and (status == 429 or status >= 500)
 
 
 @lru_cache
@@ -116,12 +124,59 @@ def _response_text(response) -> str:
     return ""
 
 
+def _build_kwargs(
+    *,
+    prompt: str,
+    model: str,
+    max_tokens: int,
+    effort: Effort,
+    system: str | None,
+    cache_system: bool,
+) -> dict:
+    kwargs: dict = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "output_config": {"effort": effort},
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        kwargs["system"] = (
+            [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+            if cache_system
+            else system
+        )
+    return kwargs
+
+
+# The retry decorator sits on these raw callers, not on the public functions
+# below, and that placement is load-bearing. Tenacity inspects the exception
+# that escapes the function it wraps, so converting an `anthropic.APIError`
+# into an `UpstreamError` *inside* the retried function hides the status code
+# and makes `_is_retryable` return False for everything — the retries silently
+# never fire. Retry on the raw SDK error here; translate once, outside.
+
+
 @retry(
-    retry=retry_if_exception_type(_RETRYABLE),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    retry=retry_if_exception(_is_retryable),
+    stop=stop_after_attempt(5),
+    # Jittered, so concurrent workers don't retry in lockstep and re-collide.
+    wait=wait_random_exponential(multiplier=1, max=30),
     reraise=True,
 )
+def _create_raw(**kwargs):
+    return get_client().messages.create(**kwargs)
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    stop=stop_after_attempt(5),
+    wait=wait_random_exponential(multiplier=1, max=30),
+    reraise=True,
+)
+def _parse_raw(**kwargs):
+    return get_client().messages.parse(**kwargs)
+
+
 def complete(
     *,
     prompt: str,
@@ -137,21 +192,17 @@ def complete(
     the same large system prompt is reused across many calls, since cached
     tokens read at roughly a tenth of the input price.
     """
-    kwargs: dict = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "output_config": {"effort": effort},
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if system:
-        kwargs["system"] = (
-            [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
-            if cache_system
-            else system
-        )
+    kwargs = _build_kwargs(
+        prompt=prompt,
+        model=model,
+        max_tokens=max_tokens,
+        effort=effort,
+        system=system,
+        cache_system=cache_system,
+    )
 
     try:
-        response = get_client().messages.create(**kwargs)
+        response = _create_raw(**kwargs)
     except anthropic.APIError as exc:
         raise UpstreamError(f"Claude request failed: {exc}") from exc
 
@@ -160,12 +211,6 @@ def complete(
     return _response_text(response)
 
 
-@retry(
-    retry=retry_if_exception_type(_RETRYABLE),
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
-    reraise=True,
-)
 def parse[T: BaseModel](
     *,
     prompt: str,
@@ -182,21 +227,22 @@ def parse[T: BaseModel](
     no brace-trimming, and no "model appended a sentence after the JSON" path
     to defend against — the failure mode collapses to a plain validation error.
     """
-    kwargs: dict = {
-        "model": model,
-        "max_tokens": max_tokens,
-        "output_config": {"effort": effort, "format": schema},
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    if system:
-        kwargs["system"] = (
-            [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
-            if cache_system
-            else system
-        )
+    kwargs = _build_kwargs(
+        prompt=prompt,
+        model=model,
+        max_tokens=max_tokens,
+        effort=effort,
+        system=system,
+        cache_system=cache_system,
+    )
+    # The Python SDK takes the schema as a top-level `output_format`, not inside
+    # `output_config` — putting the class in `output_config` makes the SDK try
+    # to JSON-serialize the Pydantic class and fail with "Object of type
+    # ModelMetaclass is not JSON serializable".
+    kwargs["output_format"] = schema
 
     try:
-        response = get_client().messages.parse(**kwargs)
+        response = _parse_raw(**kwargs)
     except anthropic.APIError as exc:
         raise UpstreamError(f"Claude request failed: {exc}") from exc
 

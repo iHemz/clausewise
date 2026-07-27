@@ -144,6 +144,8 @@ export interface Analysis {
   status: 'pending' | 'complete' | 'failed';
   /** Findings the model produced but could not ground in the source text. */
   dropped_ungrounded: number;
+  /** Clauses whose analysis failed — the document was only partly reviewed. */
+  clauses_failed: number;
   error: string | null;
 }
 
