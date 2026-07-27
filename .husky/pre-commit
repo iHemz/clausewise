@@ -1,0 +1,25 @@
+#!/bin/sh
+# Pre-commit quality gate. Fails the commit if the staged changes would break
+# lint, formatting, types, naming conventions, or the Python checks.
+
+set -e
+
+# 1. Lint + format staged web files.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '^apps/web/'; then
+  (cd apps/web && pnpm exec lint-staged)
+  # tsc needs the whole project, not just the staged files.
+  (cd apps/web && pnpm run typecheck)
+fi
+
+# 2. File/folder naming conventions.
+node .husky/naming-check.mjs
+
+# 3. Python checks — only when apps/api .py files are staged and uv is present.
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM -- 'apps/api/**/*.py')
+if [ -n "$STAGED_PY" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    (cd apps/api && uv run ruff check . && uv run ruff format --check .)
+  else
+    echo "WARNING: staged Python changes but 'uv' not found — skipping ruff."
+  fi
+fi

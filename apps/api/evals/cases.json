@@ -1,0 +1,99 @@
+[
+  {
+    "name": "saas-msa",
+    "file": "contracts/saas-msa.docx",
+    "labels": [
+      {
+        "category": "auto_renewal",
+        "quote": "it shall renew automatically for successive twelve (12) month periods unless Customer gives written notice of non-renewal not less than ninety (90) days prior to the end of the then-current term",
+        "severity": "medium"
+      },
+      {
+        "category": "payment_terms",
+        "quote": "Customer shall pay all fees within ninety (90) days of the date of invoice",
+        "severity": "medium"
+      },
+      {
+        "category": "payment_terms",
+        "quote": "Interest shall accrue on overdue amounts at the rate of four percent (4%) per month, compounded monthly",
+        "severity": "high"
+      },
+      {
+        "category": "unilateral_termination",
+        "quote": "Provider may modify, suspend, or discontinue any part of the Services at any time in its sole discretion and without liability to Customer",
+        "severity": "high"
+      },
+      {
+        "category": "unilateral_termination",
+        "quote": "Provider may terminate this Agreement at any time for convenience upon thirty (30) days written notice",
+        "severity": "medium"
+      },
+      {
+        "category": "ip_assignment",
+        "quote": "Customer hereby assigns to Provider all right, title and interest in and to any feedback, suggestions, configurations, workflows, integrations and derivative works arising from Customer's use of the Services",
+        "severity": "high"
+      },
+      {
+        "category": "confidentiality",
+        "quote": "Customer shall keep confidential all information disclosed by Provider in perpetuity. The obligations in this clause bind Customer only",
+        "severity": "medium"
+      },
+      {
+        "category": "indemnity",
+        "quote": "Customer shall indemnify, defend and hold harmless Provider against any and all claims, losses, liabilities and expenses of whatever nature arising out of or in connection with Customer's use of the Services, without limitation",
+        "severity": "high"
+      },
+      {
+        "category": "limitation_of_liability",
+        "quote": "Provider's aggregate liability under this Agreement shall not exceed one hundred pounds (GBP 100)",
+        "severity": "high"
+      },
+      {
+        "category": "non_compete",
+        "quote": "Customer shall not, during the term and for a period of five (5) years thereafter, engage or solicit any employee, contractor or agent of Provider anywhere in the world",
+        "severity": "high"
+      },
+      {
+        "category": "governing_law",
+        "quote": "The parties submit to the exclusive jurisdiction of the courts of Wilmington, Delaware, and Customer waives any objection on the grounds of inconvenient forum",
+        "severity": "medium"
+      }
+    ]
+  },
+  {
+    "name": "contractor-agreement",
+    "file": "contracts/contractor-agreement.docx",
+    "labels": [
+      {
+        "category": "payment_terms",
+        "quote": "subject to Company's right to set off any amount it considers owing to it under this or any other agreement",
+        "severity": "medium"
+      },
+      {
+        "category": "ip_assignment",
+        "quote": "all intellectual property rights in any work, invention, design or improvement created by Contractor during the term of this Agreement, whether or not created in the course of providing the Services and whether or not created using Company resources",
+        "severity": "high"
+      },
+      {
+        "category": "non_compete",
+        "quote": "For a period of twenty-four (24) months following termination, Contractor shall not directly or indirectly provide services of any kind to any person or entity which competes with Company, in any territory in which Company operates or intends to operate",
+        "severity": "high"
+      },
+      {
+        "category": "confidentiality",
+        "quote": "This obligation continues indefinitely following termination of this Agreement",
+        "severity": "low"
+      },
+      {
+        "category": "indemnity",
+        "quote": "Contractor shall indemnify Company in full against all losses, damages, costs and expenses arising from any breach of this Agreement by Contractor, and such indemnity shall be uncapped",
+        "severity": "high"
+      },
+      {
+        "category": "unilateral_termination",
+        "quote": "Company may terminate this Agreement immediately at any time without notice and without cause. Contractor shall give not less than three (3) months written notice to terminate",
+        "severity": "high"
+      }
+    ]
+  }
+]

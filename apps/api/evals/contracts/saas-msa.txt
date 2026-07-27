@@ -1,0 +1,27 @@
+MASTER SERVICES AGREEMENT
+
+This Master Services Agreement (the "Agreement") is entered into between Northgate Systems Limited ("Provider") and the customer identified in the applicable Order Form ("Customer").
+
+1. Definitions. In this Agreement, "Services" means the software-as-a-service platform made available by Provider, "Order Form" means the ordering document executed by both parties, and "Customer Data" means data submitted by Customer to the Services.
+
+2. Term and Renewal. This Agreement commences on the Effective Date and continues for an initial term of twelve (12) months. Thereafter it shall renew automatically for successive twelve (12) month periods unless Customer gives written notice of non-renewal not less than ninety (90) days prior to the end of the then-current term.
+
+3. Fees and Payment. Customer shall pay all fees within ninety (90) days of the date of invoice. Provider may increase fees for any renewal term by providing notice at or before the commencement of that term. Interest shall accrue on overdue amounts at the rate of four percent (4%) per month, compounded monthly.
+
+4. Suspension and Modification. Provider may modify, suspend, or discontinue any part of the Services at any time in its sole discretion and without liability to Customer.
+
+5. Termination. Provider may terminate this Agreement at any time for convenience upon thirty (30) days written notice. Customer may terminate only for Provider's uncured material breach, following a sixty (60) day cure period.
+
+6. Intellectual Property. Customer hereby assigns to Provider all right, title and interest in and to any feedback, suggestions, configurations, workflows, integrations and derivative works arising from Customer's use of the Services, whether or not developed by Customer.
+
+7. Confidentiality. Customer shall keep confidential all information disclosed by Provider in perpetuity. The obligations in this clause bind Customer only, and Provider shall be under no corresponding obligation in respect of Customer Data.
+
+8. Indemnity. Customer shall indemnify, defend and hold harmless Provider against any and all claims, losses, liabilities and expenses of whatever nature arising out of or in connection with Customer's use of the Services, without limitation and regardless of the cause.
+
+9. Limitation of Liability. Provider's aggregate liability under this Agreement shall not exceed one hundred pounds (GBP 100), whether in contract, tort or otherwise.
+
+10. Non-Solicitation. Customer shall not, during the term and for a period of five (5) years thereafter, engage or solicit any employee, contractor or agent of Provider anywhere in the world.
+
+11. Governing Law. This Agreement shall be governed by the laws of the State of Delaware. The parties submit to the exclusive jurisdiction of the courts of Wilmington, Delaware, and Customer waives any objection on the grounds of inconvenient forum.
+
+12. Notices. Any notice under this Agreement shall be given in writing and delivered by hand or sent by recorded post to the registered address of the receiving party.

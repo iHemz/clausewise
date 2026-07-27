@@ -1,0 +1,17 @@
+{
+  "name": "boilerplate",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "lint": "pnpm --filter web lint",
+    "typecheck": "pnpm --filter web typecheck",
+    "test": "pnpm --filter web test",
+    "format": "pnpm --filter web format",
+    "format:check": "pnpm --filter web format:check"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+
+/* Design tokens. Add a token here before using a raw hex anywhere in a
+   component — that is what keeps the palette from drifting. */
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-muted: #f6f6f7;
+  --color-border: #e4e4e7;
+  --color-foreground: #18181b;
+  --color-foreground-muted: #71717a;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-danger: #dc2626;
+  --color-warning: #b45309;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-surface: #09090b;
+    --color-surface-muted: #18181b;
+    --color-border: #27272a;
+    --color-foreground: #fafafa;
+    --color-foreground-muted: #a1a1aa;
+    --color-accent: #3b82f6;
+    --color-accent-hover: #60a5fa;
+    --color-danger: #f87171;
+    --color-warning: #fbbf24;
+  }
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-foreground);
+}
+
+/* Respect the OS-level motion preference. Any animation added later must stay
+   inside this contract. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

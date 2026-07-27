@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+.python-version
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+.next/
+out/
+build/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.pnpm-store/
+
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Misc
+*.log

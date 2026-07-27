@@ -1,0 +1,52 @@
+[project]
+name = "clausewise-backend"
+version = "0.1.0"
+description = "Contract clause risk analysis API"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.121.2",
+    "uvicorn[standard]==0.41.0",
+    "pydantic==2.12.4",
+    "pydantic-settings==2.13.1",
+    "python-dotenv==1.2.1",
+    "python-multipart==0.0.20",
+    "httpx==0.28.1",
+    "tenacity==9.1.2",
+    "anthropic==0.116.0",
+    "pdfplumber==0.11.7",
+    "python-docx==1.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.15.20",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "__pycache__"]
+
+[tool.ruff.lint]
+# E/W pycodestyle · F pyflakes · I isort · B bugbear · UP pyupgrade
+# SIM flake8-simplify · ASYNC async gotchas · RUF ruff-specific
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "ASYNC", "RUF"]
+ignore = [
+    "E501", # line length is enforced by the formatter, not the linter
+    "B008", # FastAPI's Depends() in defaults is the documented idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.ruff.format]
+quote-style = "double"
