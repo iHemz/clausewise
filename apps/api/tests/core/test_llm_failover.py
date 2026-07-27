@@ -212,3 +212,65 @@ def test_provider_unavailable_is_not_retried_on_the_same_provider(wire):
     call()
 
     assert primary.calls == 1, "an exhausted provider should be tried once, not retried"
+
+
+# --- Error classification --------------------------------------------------
+# `classify` decides whether a provider error means "this account is finished"
+# or "wait and try again". Getting it backwards is expensive in both
+# directions, so the boundary is pinned here.
+
+
+class FakeStatusError(Exception):
+    def __init__(self, message: str, status: int) -> None:
+        super().__init__(message)
+        self.status_code = status
+
+
+def test_a_rate_limit_is_retryable_even_when_it_mentions_quota():
+    from core.providers import classify
+
+    # The bug this pins: Groq's 429 body says "quota", a message-first
+    # classifier read it as exhausted credit, marked the provider dead, and
+    # skipped the backoff that would have cleared it. Five of thirteen clauses
+    # were lost that way on a live run.
+    exc = FakeStatusError(
+        "Rate limit reached: you exceeded your current quota, tokens per minute", 429
+    )
+
+    result = classify(exc, Provider.GROQ, 429)
+
+    assert result is exc, "a 429 must fall through to the retry layer"
+    assert not isinstance(result, ProviderUnavailable)
+    assert llm._is_retryable(result), "and must be retryable once it gets there"
+
+
+def test_exhausted_credit_outside_a_429_is_provider_unavailable():
+    from core.providers import classify
+
+    exc = FakeStatusError("Your credit balance is too low to access the API", 400)
+
+    result = classify(exc, Provider.ANTHROPIC, 400)
+
+    assert isinstance(result, ProviderUnavailable)
+    assert not llm._is_retryable(result), "a dead account must not be retried"
+
+
+def test_a_bad_key_is_provider_unavailable_even_as_a_400():
+    from core.providers import classify
+
+    # These endpoints answer a wrong key with a 400, not the 401 the SDK maps
+    # to AuthenticationError — so status alone would never catch it.
+    exc = FakeStatusError("Incorrect API key provided.", 400)
+
+    assert isinstance(classify(exc, Provider.GROQ, 400), ProviderUnavailable)
+
+
+def test_an_ordinary_bad_request_stays_an_ordinary_bad_request():
+    from core.providers import classify
+
+    exc = FakeStatusError("messages: field required", 400)
+
+    result = classify(exc, Provider.ANTHROPIC, 400)
+
+    assert result is exc
+    assert not isinstance(result, ProviderUnavailable)

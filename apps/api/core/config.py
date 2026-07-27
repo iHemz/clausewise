@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ProviderName = Literal["anthropic", "xai"]
+ProviderName = Literal["anthropic", "xai", "groq"]
 
 
 class Settings(BaseSettings):
@@ -29,13 +29,17 @@ class Settings(BaseSettings):
     # A provider with no key is skipped when the fallback chain is built, and
     # having none configured fails at the call site with a clear message.
     anthropic_api_key: str | None = None
+    #: xAI (x.ai) — Grok models. Keys look like `xai-...`.
     xai_api_key: str | None = None
+    #: Groq (groq.com) — open models on fast inference hardware. Keys are
+    #: `gsk_...`. A different company from xAI despite the similar name.
+    groq_api_key: str | None = None
 
     #: Provider tried first.
     llm_provider: ProviderName = "anthropic"
     #: Comma-separated providers to try when the primary cannot serve at all
     #: (exhausted credit, rejected key, hard capacity). Empty disables failover.
-    llm_fallback_providers: str = "xai"
+    llm_fallback_providers: str = "groq,xai"
 
     @property
     def cors_origins(self) -> list[str]:

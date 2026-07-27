@@ -52,15 +52,25 @@ averaged away — a disputed finding is flagged in the UI.
 
 ## Provider failover
 
-Claude is primary; Grok takes over automatically when the Anthropic account cannot serve —
-exhausted credit, a rejected key, hard capacity. Set both keys in `apps/api/.env`:
+Claude is primary. When the Anthropic account cannot serve at all — exhausted credit, a
+rejected key — the next configured provider takes over automatically.
 
 ```bash
+# apps/api/.env
 ANTHROPIC_API_KEY=sk-ant-...
-XAI_API_KEY=xai-...
+GROQ_API_KEY=gsk_...           # Groq (groq.com) — open models, fast, cheap
+XAI_API_KEY=xai-...            # xAI (x.ai) — Grok models
 LLM_PROVIDER=anthropic
-LLM_FALLBACK_PROVIDERS=xai     # empty disables failover
+LLM_FALLBACK_PROVIDERS=groq,xai   # empty disables failover
 ```
+
+**Groq and xAI are different companies** with near-identical names, and their keys are
+easy to swap by mistake (`gsk_...` vs `xai-...`). Both are supported and named explicitly
+everywhere rather than hidden behind one "grok" alias.
+
+Verified end to end on the 2-page sample with Anthropic out of credit: failover to Groq
+(`openai/gpt-oss-120b`), 13/13 clauses analysed, **12 findings with 12/12 citation spans
+selecting exactly their quote**, 0 ungrounded drops.
 
 Two design decisions are worth stating, because the obvious version of this feature is
 wrong in both:
@@ -75,8 +85,18 @@ document was reviewed by more than one model. Severity is calibrated differently
 so a mixed-provider analysis is a different artifact from a single-provider one — quietly
 swapping models mid-document would undermine the same trust the citations exist to build.
 
-Both providers enforce the response schema server-side, so the grounding contract is
-identical either way: a finding still has to quote text that exists, or it is dropped.
+Every provider enforces the response schema server-side, so the grounding contract is
+identical whichever answers: a finding still has to quote text that exists, or it is
+dropped. That constraint drives model choice — Groq defaults to `openai/gpt-oss-120b`
+because it is the largest model there with *strict* schema support, and a model without
+it is not a valid substitute however capable it otherwise is.
+
+**Rate limits are not failover.** A 429 is transient and gets retried in place with
+jittered backoff; only a dead account advances the chain. Getting that backwards is easy
+and costly — rate-limit messages mention "quota", so a message-first classifier reads them
+as exhausted credit and skips the retry that would have worked. On the first live run that
+mistake cost 5 of 13 clauses; after the fix, 41 rate limits were absorbed and 0 clauses
+failed.
 
 ## Running it
 

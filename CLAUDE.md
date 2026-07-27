@@ -33,9 +33,14 @@ and propose something else.
 
 - Every model call goes through `apps/api/core/llm.py`. Never construct a provider
   SDK client elsewhere — `core/providers.py` is the only module that imports one.
-- **Two providers, with failover.** Anthropic (Claude) is primary; xAI (Grok) takes
-  over when Anthropic cannot serve at all. Configured by `LLM_PROVIDER` and
-  `LLM_FALLBACK_PROVIDERS`.
+- **Three providers, with failover.** Anthropic (Claude) is primary; Groq and xAI take
+  over when it cannot serve at all. Configured by `LLM_PROVIDER` and
+  `LLM_FALLBACK_PROVIDERS`. Groq (`gsk_...`) and xAI (`xai-...`) are different companies
+  with near-identical names — never collapse them into one "grok" option.
+- **A 429 is not a dead provider.** Rate limits retry in place with jittered backoff;
+  only an unusable account advances the chain. Classify on status before message, or
+  rate-limit prose mentioning "quota" gets misread as exhausted credit and the retry that
+  would have worked is skipped.
 - **Failover is deliberately narrow and must stay that way.** Only
   `ProviderUnavailable` — exhausted credit, rejected key, hard capacity — advances
   to the next provider. A malformed request, a schema failure, or a refusal fails

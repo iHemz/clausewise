@@ -1,12 +1,12 @@
 """Model providers behind one interface, so the app can fail over between them.
 
-Two adapters today — Anthropic (Claude) and xAI (Grok). Both speak the same
-small protocol, so ``core.llm`` can try one and fall back to the next without
-knowing anything about either SDK.
+Three adapters: Anthropic (Claude), xAI (Grok), and Groq (open models on fast
+inference hardware). All speak the same small protocol, so ``core.llm`` can try
+one and fall back to the next without knowing anything about either SDK.
 
 The rule that makes failover safe is **narrowness**. Only
 :class:`ProviderUnavailable` triggers a fallback, and it is raised only when the
-provider cannot serve *any* request right now: exhausted credits, a missing or
+provider cannot serve *any* request right now: exhausted credit, a missing or
 rejected key, or hard capacity limits. Everything else — a malformed request, a
 schema the model could not satisfy, a safety refusal — propagates immediately
 from the primary provider.
@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from pydantic import BaseModel
 
@@ -34,7 +34,13 @@ logger = logging.getLogger("app.providers")
 
 class Provider(StrEnum):
     ANTHROPIC = "anthropic"
+    #: Grok, from xAI (x.ai). Keys look like ``xai-...``.
     XAI = "xai"
+    #: Open models on Groq's inference hardware (groq.com). Keys are ``gsk_...``.
+    #: A different company from xAI despite the near-identical name. Mixing the
+    #: two up is by far the most likely misconfiguration here, so both are named
+    #: explicitly everywhere rather than hidden behind a generic alias.
+    GROQ = "groq"
 
 
 class ProviderUnavailable(UpstreamError):
@@ -106,11 +112,11 @@ class LLMProvider(Protocol):
 # --- Shared helpers --------------------------------------------------------
 
 # Substrings that mean "this account cannot make calls", checked against the
-# provider's error message. String matching is unavoidable here: both providers
+# provider's error message. String matching is unavoidable here: providers
 # report exhausted credit as a generic 400/403 with the detail only in prose,
-# so there is no status code or error type that distinguishes it from an
-# ordinary bad request. Kept in one visible list rather than scattered through
-# the adapters, so adding a newly-observed phrasing is a one-line change.
+# so no status code or error type distinguishes it from an ordinary bad request.
+# Kept in one visible list rather than scattered through the adapters, so adding
+# a newly-observed phrasing is a one-line change.
 _EXHAUSTED_MARKERS = (
     "credit balance is too low",
     "insufficient credits",
@@ -121,10 +127,52 @@ _EXHAUSTED_MARKERS = (
     "no credits",
 )
 
+# Substrings meaning "this key is wrong". Needed because the OpenAI-compatible
+# endpoints answer a bad key with a 400, not the 401 the SDK maps to
+# AuthenticationError — so without this a wrong key reads as an ordinary bad
+# request and never advances the fallback chain. Found the hard way.
+_BAD_KEY_MARKERS = (
+    "incorrect api key",
+    "invalid api key",
+    "invalid_api_key",
+    "no api key provided",
+)
+
 
 def _looks_exhausted(message: str) -> bool:
     lowered = message.lower()
     return any(marker in lowered for marker in _EXHAUSTED_MARKERS)
+
+
+def _looks_bad_key(message: str) -> bool:
+    lowered = message.lower()
+    return any(marker in lowered for marker in _BAD_KEY_MARKERS)
+
+
+def classify(exc: Exception, provider: Provider, status: int | None) -> Exception:
+    """Decide whether ``exc`` means "this provider is done" or "try again".
+
+    Status is checked **before** the message, and that order is the whole point.
+    A 429 is a rate limit: transient, and the single most retryable error there
+    is. But rate-limit messages routinely mention "quota" or "tokens per
+    minute", so a message-first classifier reads them as exhausted credit,
+    marks the provider unavailable, and — because unavailability is explicitly
+    not retryable — skips the backoff that would have fixed it. Observed live:
+    five of thirteen clauses lost to a free-tier rate limit that one retry each
+    would have cleared.
+
+    So: 429 always falls through to the retry layer. Only a non-429 failure gets
+    read as a dead account.
+    """
+    if status == 429:
+        return exc
+
+    message = str(exc)
+    if _looks_bad_key(message):
+        return ProviderUnavailable(provider, "API key rejected")
+    if _looks_exhausted(message):
+        return ProviderUnavailable(provider, "credit or quota exhausted")
+    return exc
 
 
 def _estimate_cost(
@@ -181,8 +229,8 @@ class AnthropicProvider:
 
         if isinstance(exc, anthropic.AuthenticationError | anthropic.PermissionDeniedError):
             return ProviderUnavailable(self.name, "API key rejected")
-        if isinstance(exc, anthropic.APIStatusError) and _looks_exhausted(str(exc)):
-            return ProviderUnavailable(self.name, "credit balance exhausted")
+        if isinstance(exc, anthropic.APIStatusError):
+            return classify(exc, self.name, getattr(exc, "status_code", None))
         return exc
 
     def _build(
@@ -292,48 +340,50 @@ class AnthropicProvider:
         return Completion(value=parsed, usage=self._usage(response))
 
 
-# --- xAI (Grok) ------------------------------------------------------------
-
-XAI_BASE_URL = "https://api.x.ai/v1"
-
-MODEL_XAI_SMART = "grok-4.5"
-MODEL_XAI_BALANCED = "grok-4.3"
-
-# Published rates vary by context length; the lower figure is used, so the
-# estimate is a floor rather than a promise.
-_XAI_PRICING: dict[str, tuple[float, float]] = {
-    MODEL_XAI_SMART: (2.0, 6.0),
-    MODEL_XAI_BALANCED: (1.25, 2.5),
-}
+# --- OpenAI-compatible providers (xAI, Groq) -------------------------------
 
 
-class XAIProvider:
-    """Grok via xAI's OpenAI-compatible endpoint.
+class OpenAICompatibleProvider:
+    """Shared adapter for any endpoint that speaks the OpenAI chat API.
 
-    The OpenAI SDK pointed at ``api.x.ai`` is used rather than ``xai-sdk``: it
-    is the better-trodden path, and ``chat.completions.parse`` gives the same
-    server-enforced Pydantic schema guarantee the Anthropic adapter relies on.
-    Keeping that guarantee on both providers is what makes them substitutable —
-    a fallback that returned unvalidated prose would quietly break every caller
-    that depends on structured output.
+    xAI and Groq are different companies with confusingly similar names, but
+    both expose the same wire protocol, so one adapter serves both. Subclasses
+    supply a base URL, a default model, and which setting holds the key.
+
+    The OpenAI SDK is used rather than each vendor's own client for one reason
+    that matters: ``chat.completions.parse`` converts a Pydantic model into a
+    *strict* JSON schema — every field required, ``additionalProperties: false``
+    — and validates the reply against it. That is the same server-side guarantee
+    the Anthropic adapter relies on, and keeping it identical across providers
+    is what makes them substitutable. A fallback that returned unvalidated prose
+    would quietly break every caller that depends on structured output.
     """
 
-    name = Provider.XAI
+    name: Provider
+    base_url: str
+    model: str
+    pricing: ClassVar[dict[str, tuple[float, float]]] = {}
+    key_setting: str = ""
 
-    def __init__(self, model: str = MODEL_XAI_SMART) -> None:
-        self.model = model
+    def __init__(self, model: str | None = None) -> None:
+        if model:
+            self.model = model
         self._client: Any = None
 
+    def _api_key(self) -> str | None:
+        return getattr(settings, self.key_setting, None)
+
     def is_configured(self) -> bool:
-        return bool(settings.xai_api_key)
+        return bool(self._api_key())
 
     def _get_client(self) -> Any:
         import openai
 
         if self._client is None:
-            if not settings.xai_api_key:
-                raise ProviderUnavailable(self.name, "XAI_API_KEY is not set")
-            self._client = openai.OpenAI(api_key=settings.xai_api_key, base_url=XAI_BASE_URL)
+            key = self._api_key()
+            if not key:
+                raise ProviderUnavailable(self.name, f"{self.key_setting.upper()} is not set")
+            self._client = openai.OpenAI(api_key=key, base_url=self.base_url)
         return self._client
 
     def _translate(self, exc: Exception) -> Exception:
@@ -341,8 +391,8 @@ class XAIProvider:
 
         if isinstance(exc, openai.AuthenticationError | openai.PermissionDeniedError):
             return ProviderUnavailable(self.name, "API key rejected")
-        if isinstance(exc, openai.APIStatusError) and _looks_exhausted(str(exc)):
-            return ProviderUnavailable(self.name, "credit balance exhausted")
+        if isinstance(exc, openai.APIStatusError):
+            return classify(exc, self.name, getattr(exc, "status_code", None))
         return exc
 
     def _messages(self, prompt: str, system: str | None) -> list[dict]:
@@ -364,15 +414,15 @@ class XAIProvider:
             input_tokens=inp,
             output_tokens=out,
             cached_tokens=cached,
-            cost_usd=_estimate_cost(self.model, _XAI_PRICING, inp, out),
+            cost_usd=_estimate_cost(self.model, self.pricing, inp, out),
         )
 
     def complete(
         self, *, prompt: str, system: str | None, max_tokens: int, effort: str, cache_system: bool
     ) -> Completion[str]:
-        # `effort` and `cache_system` are Anthropic concepts. xAI caches
-        # automatically and exposes no equivalent knob, so they are accepted and
-        # ignored rather than translated into a guess that might 400.
+        # `effort` and `cache_system` are Anthropic concepts. These endpoints
+        # cache automatically and expose no equivalent knob, so both are accepted
+        # and ignored rather than translated into a guess that would 400.
         del effort, cache_system
         try:
             response = self._get_client().chat.completions.create(
@@ -414,13 +464,57 @@ class XAIProvider:
 
         message = response.choices[0].message
         if getattr(message, "refusal", None):
-            raise UpstreamError(f"Grok declined this request: {message.refusal}")
+            raise UpstreamError(f"{self.name.value} declined this request: {message.refusal}")
 
         parsed = getattr(message, "parsed", None)
         if parsed is None:
-            raise UpstreamError(f"Grok returned no output matching {schema.__name__}.")
+            raise UpstreamError(f"{self.name.value} returned no output matching {schema.__name__}.")
         return Completion(value=parsed, usage=self._usage(response))
 
+
+class XAIProvider(OpenAICompatibleProvider):
+    """Grok, from xAI (x.ai). Keys look like ``xai-...``.
+
+    Not to be confused with :class:`GroqProvider` — different company, different
+    models, near-identical name.
+    """
+
+    name = Provider.XAI
+    base_url = "https://api.x.ai/v1"
+    model = "grok-4.5"
+    key_setting = "xai_api_key"
+    pricing: ClassVar[dict[str, tuple[float, float]]] = {
+        "grok-4.5": (2.0, 6.0),
+        "grok-4.3": (1.25, 2.5),
+    }
+
+
+class GroqProvider(OpenAICompatibleProvider):
+    """Open models on Groq's fast inference hardware (groq.com). Keys are ``gsk_...``.
+
+    ``openai/gpt-oss-120b`` is the default because it is the largest model here
+    that supports *strict* structured outputs. That is a requirement rather than
+    a preference: a model without strict schema support cannot uphold the
+    guarantee the rest of the codebase is built on, so it is not a valid
+    substitute however capable it otherwise is.
+    """
+
+    name = Provider.GROQ
+    base_url = "https://api.groq.com/openai/v1"
+    model = "openai/gpt-oss-120b"
+    key_setting = "groq_api_key"
+    pricing: ClassVar[dict[str, tuple[float, float]]] = {
+        "openai/gpt-oss-120b": (0.15, 0.75),
+        "openai/gpt-oss-20b": (0.10, 0.50),
+        "llama-3.3-70b-versatile": (0.59, 0.79),
+    }
+
+
+_BUILDERS: dict[Provider, type] = {
+    Provider.ANTHROPIC: AnthropicProvider,
+    Provider.XAI: XAIProvider,
+    Provider.GROQ: GroqProvider,
+}
 
 _REGISTRY: dict[Provider, LLMProvider] = {}
 
@@ -428,7 +522,7 @@ _REGISTRY: dict[Provider, LLMProvider] = {}
 def get_provider(name: Provider) -> LLMProvider:
     """Return the shared adapter for ``name``, building it on first use."""
     if name not in _REGISTRY:
-        _REGISTRY[name] = AnthropicProvider() if name is Provider.ANTHROPIC else XAIProvider()
+        _REGISTRY[name] = _BUILDERS[name]()
     return _REGISTRY[name]
 
 
