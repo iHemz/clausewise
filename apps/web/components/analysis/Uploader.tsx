@@ -73,7 +73,15 @@ export function Uploader({ onAnalyze, error }: Props) {
           source — and you are told how many were dropped.
         </p>
 
+        {/* The whole zone opens the picker, not just the button inside it — a
+            dashed target that says "drop a contract here" reads as clickable,
+            and a pointer cursor over something inert is a small lie of its own.
+            No `role="button"` on purpose: the real button below is the
+            keyboard-accessible control, and nesting one interactive element
+            inside another confuses screen readers. This is a mouse affordance
+            layered on top of an already-accessible one. */}
         <div
+          onClick={() => inputRef.current?.click()}
           onDragOver={(event) => {
             event.preventDefault();
             setIsDragging(true);
@@ -85,7 +93,7 @@ export function Uploader({ onAnalyze, error }: Props) {
             handleFile(event.dataTransfer.files[0]);
           }}
           className={cn(
-            'mt-8 rounded-md border border-dashed p-10 transition-colors',
+            'mt-8 cursor-pointer rounded-md border border-dashed p-10 transition-colors',
             isDragging
               ? 'border-accent bg-accent/5'
               : 'border-foreground/30 hover:border-foreground/50',
@@ -99,7 +107,12 @@ export function Uploader({ onAnalyze, error }: Props) {
           <div className="mt-5 flex flex-wrap items-center gap-5">
             <button
               type="button"
-              onClick={() => inputRef.current?.click()}
+              onClick={(event) => {
+                // The zone around this button opens the picker too; without
+                // this the click bubbles and asks for it twice.
+                event.stopPropagation();
+                inputRef.current?.click();
+              }}
               className="bg-accent hover:bg-accent-hover focus-visible:outline-accent rounded-md px-5 py-2.5 text-[15px] font-semibold text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               Choose a file

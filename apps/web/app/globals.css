@@ -51,6 +51,24 @@ body {
   background: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
+/* Tailwind v4's preflight sets `cursor: default` on buttons — a deliberate
+   change from v3, which matched the native browser default rather than the
+   convention every user actually expects. Restore the pointer once, here,
+   rather than remembering `cursor-pointer` on every button in the app.
+
+   Disabled controls are excluded: a pointer on something that will not respond
+   promises an interaction that is not there. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']),
+label[for],
+summary {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 /* Citation highlights. Kept in CSS rather than composed from arbitrary
    Tailwind values because each one is a tint plus a 1px underline in the same
    ink, and spelling that out at three severities in three components is how
