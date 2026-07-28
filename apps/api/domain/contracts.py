@@ -115,12 +115,37 @@ class Document(BaseModel):
     text: str
     clauses: list[Clause]
     page_count: int | None = None
+    #: Offset at which each page after the first begins, used to map a citation
+    #: span to a page number. Excluded from responses: it is derived data the
+    #: client never reads, and every page is already on the citations.
+    #:
+    #: It lives on the document rather than in a side table because the second
+    #: phase of the upload needs it after the request that produced it has
+    #: returned. Parking it in a module-level dict keyed by analysis id would
+    #: leak an entry for every upload whose analysis never runs.
+    page_breaks: list[int] = Field(default_factory=list, exclude=True)
 
 
 class AnalysisStatus(StrEnum):
     PENDING = "pending"
     COMPLETE = "complete"
     FAILED = "failed"
+
+
+class AnalysisStage(StrEnum):
+    """How far the pipeline has got. Reported, never inferred by the client.
+
+    The UI names the step it is showing. A stage the client guessed at would
+    eventually disagree with what the server is actually doing, and in a product
+    whose argument is "check everything I tell you", a progress display that
+    invents its own state is the one thing that cannot ship.
+    """
+
+    EXTRACTING = "extracting"
+    SEGMENTING = "segmenting"
+    ANALYZING = "analyzing"
+    JUDGING = "judging"
+    DONE = "done"
 
 
 class Analysis(BaseModel):
@@ -130,6 +155,11 @@ class Analysis(BaseModel):
     document: Document
     findings: list[Finding]
     status: AnalysisStatus = AnalysisStatus.COMPLETE
+    stage: AnalysisStage = AnalysisStage.DONE
+    #: Clauses segmented from the document — the denominator of the progress.
+    clauses_total: int = 0
+    #: Clauses whose analysis call has returned — the numerator.
+    clauses_done: int = 0
     # Findings the model produced but that failed grounding. Surfaced rather
     # than hidden — an honest tool shows what it threw away and why.
     dropped_ungrounded: int = 0

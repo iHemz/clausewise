@@ -4,6 +4,8 @@ import { expect, test } from '@playwright/test';
 // else about the product matters.
 test('the home page renders the uploader', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Clausewise' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /Every risky clause, flagged and quoted/i }),
+  ).toBeVisible();
   await expect(page.getByText('Drop a contract here')).toBeVisible();
 });

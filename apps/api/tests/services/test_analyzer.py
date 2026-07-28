@@ -220,3 +220,58 @@ def test_provenance_travels_with_the_result(stub_llm: Callable[..., None]):
     # Which model produced a finding is part of what the finding is, so it has
     # to survive all the way to the caller rather than living in a log line.
     assert result.providers_used == {"xai"}
+
+
+def test_findings_are_reported_as_they_land_not_only_at_the_end(
+    stub_llm: Callable[..., None],
+):
+    # The progress screen tells the reader that findings "appear one at a time
+    # rather than all at the end". That sentence is only true if the callback
+    # carries the findings, not just a counter — so the promise is pinned here.
+    stub_llm(analysis=ClauseAnalysis(findings=[raw("without limitation")]))
+
+    seen: list[tuple[int, int]] = []
+
+    analyze_document(
+        [a_clause(), a_clause(start=1000), a_clause(start=2000)],
+        page_breaks=[],
+        judge=False,
+        on_clause_done=lambda done, findings: seen.append((done, len(findings))),
+    )
+
+    assert [done for done, _ in seen] == [1, 2, 3]
+    # One grounded finding per clause, accumulating rather than resetting.
+    assert [count for _, count in seen] == [1, 2, 3]
+
+
+def test_the_judging_callback_fires_before_the_second_pass(stub_llm: Callable[..., None]):
+    stub_llm(
+        analysis=ClauseAnalysis(findings=[raw("without limitation")]),
+        judgement=SeverityJudgement(severity=Severity.HIGH, note="Unlimited."),
+    )
+
+    order: list[str] = []
+
+    analyze_document(
+        [a_clause()],
+        page_breaks=[],
+        judge=True,
+        on_clause_done=lambda done, findings: order.append("clause"),
+        on_judging=lambda: order.append("judging"),
+    )
+
+    assert order == ["clause", "judging"], "the stage must flip before the work, not after"
+
+
+def test_no_judging_callback_when_the_pass_is_skipped(stub_llm: Callable[..., None]):
+    stub_llm(analysis=ClauseAnalysis(findings=[raw("without limitation")]))
+
+    fired = False
+
+    def on_judging() -> None:
+        nonlocal fired
+        fired = True
+
+    analyze_document([a_clause()], page_breaks=[], judge=False, on_judging=on_judging)
+
+    assert not fired, "a stage the pipeline never enters must not be reported"

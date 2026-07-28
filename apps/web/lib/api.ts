@@ -7,10 +7,10 @@
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-// Analysis is many Claude calls over a whole document, so it needs a far longer
-// budget than an ordinary read.
 const DEFAULT_TIMEOUT_MS = 30_000;
-const ANALYZE_TIMEOUT_MS = 300_000;
+// Starting an analysis only extracts and segments, so it returns in seconds —
+// but a large scanned PDF can be slow to read, hence more than the default.
+const START_TIMEOUT_MS = 60_000;
 
 /** An error carrying the HTTP status, so callers can branch on 404 vs 500. */
 export class ApiError extends Error {
@@ -99,6 +99,13 @@ export type RiskCategory =
   | 'confidentiality'
   | 'limitation_of_liability';
 
+/**
+ * Where the pipeline has got to. Reported rather than inferred: the UI names
+ * the step it is on, and a name the client invented would eventually disagree
+ * with what the server is actually doing.
+ */
+export type AnalysisStage = 'extracting' | 'segmenting' | 'analyzing' | 'judging' | 'done';
+
 export interface Citation {
   /** Character offset into `ContractDocument.text` where the cited span begins. */
   start: number;
@@ -142,6 +149,10 @@ export interface Analysis {
   document: ContractDocument;
   findings: Finding[];
   status: 'pending' | 'complete' | 'failed';
+  stage: AnalysisStage;
+  clauses_total: number;
+  /** Clauses whose analysis call has returned — the progress counter. */
+  clauses_done: number;
   /** Findings the model produced but could not ground in the source text. */
   dropped_ungrounded: number;
   /** Clauses whose analysis failed — the document was only partly reviewed. */
@@ -159,14 +170,19 @@ export const api = {
   health: () => request<{ status: string; environment: string }>('/health'),
 
   analyses: {
-    analyze: (file: File, options: { judge?: boolean } = {}) => {
+    /**
+     * Extract, segment and queue the model passes. Returns immediately with a
+     * pending analysis whose document text is already populated — that is what
+     * lets the user read the contract while the review runs.
+     */
+    start: (file: File, options: { judge?: boolean } = {}) => {
       const form = new FormData();
       form.append('file', file);
       const query = options.judge === false ? '?judge=false' : '';
       return request<Analysis>(`/analyses/${query}`, {
         method: 'POST',
         body: form,
-        timeoutMs: ANALYZE_TIMEOUT_MS,
+        timeoutMs: START_TIMEOUT_MS,
       });
     },
     get: (id: string) => request<Analysis>(`/analyses/${id}`),

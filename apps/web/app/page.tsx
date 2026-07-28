@@ -1,25 +1,21 @@
 import { AnalysisView } from '@/components/analysis/AnalysisView';
 
-/** Server component: composes the page and hands interactivity to the view. */
+/**
+ * Server component: the app shell. One full-height column — the header is
+ * fixed and each state owns the space below it, so the contract and findings
+ * panes scroll independently instead of the whole page moving.
+ */
 export default function HomePage() {
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight">Clausewise</h1>
-        <p className="text-foreground-muted mt-2 max-w-2xl text-sm">
-          Upload a contract and get every risky clause flagged with a severity, a plain-English
-          reason, a suggested rewrite, and a citation pointing at the exact text it came from. Click
-          any finding to jump to its source.
-        </p>
+    <div className="flex h-full flex-col overflow-hidden">
+      <header className="border-border flex flex-none items-baseline gap-4 border-b px-8 py-4">
+        <span className="text-[21px] font-semibold tracking-[-0.02em]">Clausewise</span>
+        <span className="text-accent-ink text-[11px] tracking-[0.12em] uppercase">
+          Contract review
+        </span>
       </header>
 
       <AnalysisView />
-
-      <footer className="border-border text-foreground-muted mt-12 border-t pt-6 text-xs">
-        Clausewise is a demonstration of grounded document AI. It is not legal advice, and every
-        finding should be checked against the source text — which is exactly what the citations are
-        for.
-      </footer>
-    </main>
+    </div>
   );
 }

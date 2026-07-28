@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from fastapi import Depends
+
 from repositories.analyses import AnalysesRepository, InMemoryAnalysesRepository
 from services.contracts import ContractsService
 
@@ -23,5 +25,16 @@ def get_analyses_repository() -> AnalysesRepository:
     return InMemoryAnalysesRepository()
 
 
-def get_contracts_service() -> ContractsService:
-    return ContractsService(get_analyses_repository())
+def get_contracts_service(
+    repository: AnalysesRepository = Depends(get_analyses_repository),
+) -> ContractsService:
+    """Build the service from whatever repository the request resolves to.
+
+    The repository arrives through ``Depends`` rather than being fetched
+    directly, so ``app.dependency_overrides[get_analyses_repository]`` actually
+    reaches it. Calling the provider inline instead looks equivalent and is not:
+    FastAPI can only substitute what it resolves, so an inline call quietly
+    bypasses every override and a test fixture that appears to inject a fake
+    injects nothing.
+    """
+    return ContractsService(repository)

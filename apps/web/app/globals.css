@@ -1,36 +1,87 @@
+/* Broadsheet + Industry — a paper system: Source Serif 4 throughout, cyan for
+   interaction, magenta as the rarer second spot colour, hairlines instead of
+   boxes. Add a token here before using a raw hex anywhere in a component. */
 @import 'tailwindcss';
 
-/* Design tokens. Add a token here before using a raw hex anywhere in a
-   component — that is what keeps the palette from drifting. */
 @theme {
-  --color-surface: #ffffff;
-  --color-surface-muted: #f6f6f7;
-  --color-border: #e4e4e7;
-  --color-foreground: #18181b;
-  --color-foreground-muted: #71717a;
-  --color-accent: #2563eb;
-  --color-accent-hover: #1d4ed8;
-  --color-danger: #dc2626;
-  --color-warning: #b45309;
-}
+  --color-surface: #f3f2f2;
+  --color-surface-muted: #eae9e9;
+  --color-border: color-mix(in srgb, #201e1d 16%, transparent);
+  --color-foreground: #201e1d;
+  --color-foreground-muted: #605d5d;
+  --color-foreground-subtle: #7d7979;
 
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-surface: #09090b;
-    --color-surface-muted: #18181b;
-    --color-border: #27272a;
-    --color-foreground: #fafafa;
-    --color-foreground-muted: #a1a1aa;
-    --color-accent: #3b82f6;
-    --color-accent-hover: #60a5fa;
-    --color-danger: #f87171;
-    --color-warning: #fbbf24;
-  }
+  /* Cyan is the interactive ink; magenta is the second spot colour and is
+     never used for chrome. Both are deepened for text — the base pair is
+     tuned to 3:1, enough for large text and interface marks, not body copy. */
+  --color-accent: #0088b0;
+  --color-accent-hover: #1186ac;
+  --color-accent-ink: #006786;
+  --color-accent-faint: #99e0ff;
+  --color-accent-2: #d6006c;
+  --color-accent-2-ink: #aa0b56;
+
+  /* Severity is a role, not a colour choice: magenta for high so it reads as
+     the rarer, louder ink, cyan for medium, plain ink for low. */
+  --color-high: #aa0b56;
+  --color-medium: #006786;
+  --color-low: #605d5d;
+
+  /* Status inks reuse the severity pair rather than introducing a third hue. */
+  --color-danger: #aa0b56;
+  --color-warning: #006786;
+
+  /* Georgia is quoted so stylelint reads it as a string rather than a keyword
+     it wants lowercased — a font family is a proper noun. */
+  --font-serif: var(--font-source-serif), 'Georgia', serif;
+
+  /* Density 1.25× — this system is airy on purpose. */
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 4px;
 }
 
 body {
   background: var(--color-surface);
   color: var(--color-foreground);
+  font-family: var(--font-serif);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+/* Citation highlights. Kept in CSS rather than composed from arbitrary
+   Tailwind values because each one is a tint plus a 1px underline in the same
+   ink, and spelling that out at three severities in three components is how
+   the highlight colours drift apart. */
+.mark {
+  cursor: pointer;
+  color: inherit;
+  border-radius: var(--radius-sm);
+  transition: background-color 120ms linear;
+}
+
+.mark-high {
+  background: color-mix(in srgb, var(--color-accent-2) 16%, transparent);
+  box-shadow: 0 1px 0 var(--color-high);
+}
+
+.mark-medium {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  box-shadow: 0 1px 0 var(--color-medium);
+}
+
+.mark-low {
+  background: color-mix(in srgb, var(--color-foreground) 9%, transparent);
+  box-shadow: 0 1px 0 var(--color-low);
+}
+
+.mark-selected {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  box-shadow:
+    0 1px 0 var(--color-accent-ink),
+    0 0 0 2px color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
 /* Respect the OS-level motion preference. Any animation added later must stay

@@ -20,7 +20,8 @@ tool at all.
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -270,6 +271,8 @@ def analyze_document(
     page_breaks: list[int],
     *,
     judge: bool = True,
+    on_clause_done: Callable[[int, list[Finding]], None] | None = None,
+    on_judging: Callable[[], None] | None = None,
 ) -> DocumentResult:
     """Run the full pipeline over every clause.
 
@@ -283,7 +286,21 @@ def analyze_document(
         return DocumentResult(findings=[])
 
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as pool:
-        results = list(pool.map(lambda c: analyze_clause(c, page_breaks), clauses))
+        futures = [pool.submit(analyze_clause, clause, page_breaks) for clause in clauses]
+        results: list[ClauseResult] = []
+        for future in as_completed(futures):
+            results.append(future.result())
+            if on_clause_done is not None:
+                # Completion order, not document order — the count is what the
+                # caller wants, and the findings are re-sorted here so a
+                # partially-complete list still reads worst-first.
+                #
+                # The findings go with the count, not just the number: the
+                # progress screen tells the reader that findings "appear one at
+                # a time rather than all at the end", and sending only a
+                # counter would make that sentence false.
+                so_far = [f for result in results for f in result.findings]
+                on_clause_done(len(results), sort_findings(so_far))
 
     failed = sum(1 for result in results if result.failed)
     if failed == len(clauses):
@@ -303,6 +320,8 @@ def analyze_document(
         logger.warning("mixed_provider_analysis", extra={"providers": sorted(providers)})
 
     if judge and findings:
+        if on_judging is not None:
+            on_judging()
         clause_text_by_id = {clause.id: clause.text for clause in clauses}
         with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as pool:
             findings = list(

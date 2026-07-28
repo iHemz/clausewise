@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Finding } from '@/lib/api';
 import { buildSegments, dominantSeverity, findingAnchorId } from '@/lib/highlight';
+import { SEVERITY_MARK } from '@/lib/severity';
 import { cn } from '@/lib/utils';
 
 /**
@@ -12,12 +13,6 @@ import { cn } from '@/lib/utils';
  * and lands on the exact words it came from. That round trip is what separates
  * a tool a lawyer can check from one they have to trust.
  */
-
-const SEVERITY_MARK: Record<string, string> = {
-  high: 'bg-danger/15 border-b-2 border-danger/60',
-  medium: 'bg-warning/15 border-b-2 border-warning/60',
-  low: 'bg-accent/10 border-b-2 border-accent/40',
-};
 
 interface Props {
   text: string;
@@ -31,17 +26,26 @@ export function ContractView({ text, findings, selectedId, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const segments = buildSegments(text, findings);
 
-  // Scroll the selected citation into view when the selection changes.
+  // Centre the selected citation in the pane when the selection changes.
+  //
+  // Set `scrollTop` rather than call `scrollIntoView`: this pane is one of two
+  // independent scrollers inside a fixed-height shell, and scrollIntoView also
+  // scrolls whatever ancestor it decides needs to move. Offsets are measured
+  // from the rects, not `offsetTop`, so the maths does not depend on which
+  // ancestor happens to be positioned.
   useEffect(() => {
-    if (!selectedId) return;
-    const target = containerRef.current?.querySelector(`[data-anchor="${selectedId}"]`);
-    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const pane = containerRef.current;
+    if (!selectedId || !pane) return;
+    const target = pane.querySelector<HTMLElement>(`[data-anchor="${selectedId}"]`);
+    if (!target) return;
+    const delta = target.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+    pane.scrollTop = Math.max(0, pane.scrollTop + delta - pane.clientHeight / 2.6);
   }, [selectedId]);
 
   return (
     <div
       ref={containerRef}
-      className="border-border bg-surface h-[70vh] overflow-y-auto rounded-xl border p-6 font-mono text-[13px] leading-relaxed whitespace-pre-wrap"
+      className="max-w-[640px] flex-1 overflow-y-auto pr-2.5 text-[14.5px] leading-[1.8] whitespace-pre-wrap"
     >
       {segments.map((segment) => {
         const severity = dominantSeverity(segment.findings);
@@ -59,11 +63,7 @@ export function ContractView({ text, findings, selectedId, onSelect }: Props) {
             key={segment.start}
             data-anchor={anchor}
             onClick={() => onSelect(primary)}
-            className={cn(
-              'cursor-pointer rounded-sm text-inherit transition-colors',
-              SEVERITY_MARK[severity],
-              isSelected && 'ring-accent bg-accent/25 ring-2',
-            )}
+            className={cn('mark', isSelected ? 'mark-selected' : SEVERITY_MARK[severity])}
             title={segment.findings.map((f) => f.title).join(' · ')}
           >
             {segment.text}

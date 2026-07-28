@@ -1,15 +1,9 @@
 'use client';
 
-import { AlertTriangle, Scale } from 'lucide-react';
-import type { Finding, Severity } from '@/lib/api';
+import type { Finding } from '@/lib/api';
 import { categoryLabel } from '@/lib/highlight';
+import { SEVERITY_INK, SEVERITY_LABEL } from '@/lib/severity';
 import { cn } from '@/lib/utils';
-
-const SEVERITY_BADGE: Record<Severity, string> = {
-  high: 'bg-danger/15 text-danger',
-  medium: 'bg-warning/15 text-warning',
-  low: 'bg-accent/10 text-accent',
-};
 
 interface Props {
   finding: Finding;
@@ -17,6 +11,13 @@ interface Props {
   onSelect: () => void;
 }
 
+/**
+ * One finding, as an editorial entry rather than a card.
+ *
+ * No border and no fill: this system separates items with whitespace, so the
+ * only rule on the page is the one that marks the selected entry. The whole
+ * entry is the hit target, because its job is to take you to the source text.
+ */
 export function FindingCard({ finding, isSelected, onSelect }: Props) {
   // Disagreement between the two passes is shown, not averaged away — the
   // reviewer should know when the second opinion differed.
@@ -29,49 +30,46 @@ export function FindingCard({ finding, isSelected, onSelect }: Props) {
         onClick={onSelect}
         aria-current={isSelected}
         className={cn(
-          'border-border hover:border-accent/60 focus-visible:outline-accent w-full rounded-xl border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2',
-          isSelected && 'border-accent bg-accent/5',
+          'focus-visible:outline-accent -ml-[17px] block w-full border-l pl-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2',
+          isSelected ? 'border-accent' : 'hover:border-border border-transparent',
         )}
       >
-        <div className="flex items-start justify-between gap-3">
-          <h3 className="font-medium">{finding.title}</h3>
+        <div className="flex items-baseline gap-2.5">
           <span
             className={cn(
-              'shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold uppercase',
-              SEVERITY_BADGE[finding.severity],
+              'text-[11px] tracking-[0.12em] uppercase',
+              SEVERITY_INK[finding.severity],
             )}
           >
-            {finding.severity}
+            {SEVERITY_LABEL[finding.severity]} — {categoryLabel(finding.category)}
+            {finding.citation.page !== null && ` · page ${finding.citation.page}`}
+          </span>
+          <span className="text-accent-faint ml-auto text-[11px] tracking-[0.12em] uppercase tabular-nums">
+            {finding.clause_id}
           </span>
         </div>
 
-        <p className="text-foreground-muted mt-1 text-xs">
-          {categoryLabel(finding.category)}
-          {finding.citation.page !== null && ` · page ${finding.citation.page}`}
-        </p>
+        <h3 className="mt-1 text-[21px] leading-tight font-semibold tracking-[-0.015em]">
+          {finding.title}
+        </h3>
 
-        <p className="mt-3 text-sm">{finding.reason}</p>
+        <p className="mt-2 text-[14.5px] leading-relaxed">{finding.reason}</p>
 
-        <blockquote className="border-border text-foreground-muted mt-3 border-l-2 pl-3 font-mono text-xs">
+        <blockquote className="border-accent text-foreground-muted mt-2.5 border-l pl-3.5 text-sm leading-relaxed italic">
           &ldquo;{finding.citation.quote}&rdquo;
         </blockquote>
 
-        <div className="mt-3 flex items-start gap-2 text-sm">
-          <Scale className="text-accent mt-0.5 size-4 shrink-0" aria-hidden />
-          <p>
-            <span className="text-foreground-muted">Suggested: </span>
-            {finding.suggested_rewrite}
-          </p>
-        </div>
+        <p className="mt-2.5 text-[14.5px] leading-relaxed">
+          <span className="text-accent-ink text-[11px] tracking-[0.12em] uppercase">Rewrite </span>
+          {finding.suggested_rewrite}
+        </p>
 
         {disputed && (
-          <div className="text-warning mt-3 flex items-start gap-2 text-xs">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            <p>
-              Second reviewer scored this <strong>{finding.judge_severity}</strong>
-              {finding.judge_note && ` — ${finding.judge_note}`}
-            </p>
-          </div>
+          <p className="text-accent-2-ink mt-2.5 text-[13.5px] leading-relaxed">
+            The second reviewer scored this {finding.judge_severity}
+            {finding.judge_note && ` — ${finding.judge_note}`}. Severity is shown as the higher of
+            the two, not averaged.
+          </p>
         )}
       </button>
     </li>
