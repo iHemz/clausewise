@@ -10,7 +10,7 @@ import { AnalysisView } from '@/components/analysis/AnalysisView';
  */
 export default function HomePage() {
   return (
-    <div className="bg-surface border-border mx-auto flex w-full max-w-[1300px] flex-col lg:h-full lg:overflow-hidden lg:border-x">
+    <div className="bg-surface border-border mx-auto flex w-full max-w-[1680px] flex-col lg:h-full lg:overflow-hidden lg:border-x">
       <header className="border-border flex flex-none flex-wrap items-baseline gap-x-4 gap-y-3 border-b px-[clamp(18px,3vw,34px)] py-4">
         <span className="text-[21px] font-semibold tracking-[-0.02em]">Clausewise</span>
         <span className="text-accent-ink text-[11px] tracking-[0.12em] uppercase">

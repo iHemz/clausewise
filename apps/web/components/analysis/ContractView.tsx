@@ -54,7 +54,12 @@ export function ContractView({ text, findings, selectedId, scrolls = true, onSel
       className={cn(
         'whitespace-pre-wrap',
         scrolls
-          ? 'flex-1 overflow-y-auto pr-2.5 text-[clamp(14.5px,1.05vw,16px)] leading-[1.8]'
+          ? // The measure is capped, not the pane. Without this the contract
+            // column grows with the shell — ~102 characters a line at 1680px,
+            // where the eye starts losing its place on the return sweep. That
+            // matters more here than anywhere else in the app: this is the one
+            // column someone reads carefully rather than scans.
+            'max-w-[76ch] flex-1 overflow-y-auto pr-2.5 text-[clamp(14.5px,1.05vw,16px)] leading-[1.8]'
           : 'max-w-[40em] text-base leading-[1.8]',
       )}
     >

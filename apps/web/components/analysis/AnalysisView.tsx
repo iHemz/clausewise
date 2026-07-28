@@ -151,7 +151,10 @@ export function AnalysisView() {
                 {analysis.findings.length} {analysis.findings.length === 1 ? 'finding' : 'findings'}
               </span>
             </div>
-            <ul className="flex flex-col gap-8 lg:min-h-0 lg:flex-1 lg:gap-6 lg:overflow-y-auto lg:pr-2.5">
+            {/* Capped for the same reason as the contract column: at a 1680px
+                shell an uncapped findings pane runs a reason to ~98 characters
+                a line. Only above `lg` — on narrow the column is the page. */}
+            <ul className="flex flex-col gap-8 lg:min-h-0 lg:max-w-[68ch] lg:flex-1 lg:gap-6 lg:overflow-y-auto lg:pr-2.5">
               {analysis.findings.map((finding) => {
                 const anchor = findingAnchorId(finding);
                 return (
