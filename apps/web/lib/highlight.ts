@@ -72,9 +72,31 @@ export function buildSegments(text: string, findings: Finding[]): TextSegment[] 
   return segments;
 }
 
-/** A stable DOM id for a finding, so clicking one can scroll to its span. */
+/**
+ * A stable DOM id for a *cited span*, so clicking a finding can scroll to it.
+ *
+ * Deliberately not unique per finding: two findings that quote the same words
+ * share one highlight in the contract, which is the correct behaviour — there
+ * is only one set of words to point at. Use {@link findingKey} for anything
+ * that needs one value per finding.
+ */
 export function findingAnchorId(finding: Finding): string {
   return `finding-${finding.clause_id}-${finding.citation.start}`;
+}
+
+/**
+ * A unique identity for one finding, for React list keys.
+ *
+ * Separate from {@link findingAnchorId} because they answer different
+ * questions: the anchor identifies a span, this identifies a finding. Using the
+ * anchor as a key looks right and is not — the model routinely flags two
+ * different risks in the same sentence, and React then renders siblings with
+ * duplicate keys, which it warns about and which makes list updates unreliable.
+ * Observed live: dozens of duplicate-key errors while findings streamed in.
+ */
+export function findingKey(finding: Finding): string {
+  const { clause_id: clause, category, title, citation } = finding;
+  return `${clause}:${citation.start}-${citation.end}:${category}:${title}`;
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {

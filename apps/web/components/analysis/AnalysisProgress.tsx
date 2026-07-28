@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { Analysis, AnalysisStage, Finding } from '@/lib/api';
 import { SEVERITY_INK, SEVERITY_LABEL } from '@/lib/severity';
-import { categoryLabel } from '@/lib/highlight';
+import { categoryLabel, findingKey } from '@/lib/highlight';
 import { cn } from '@/lib/utils';
 
 /**
@@ -77,14 +77,14 @@ export function AnalysisProgress({ analysis, onCancel }: Props) {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-border flex-none border-b px-8 py-6">
-        <div className="flex flex-wrap items-end gap-8">
-          <div>
+    <div className="flex w-full flex-col lg:min-h-0 lg:flex-1">
+      <div className="border-border flex-none border-b px-[clamp(18px,3vw,34px)] py-6">
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
+          <div className="min-w-0">
             <p className="text-accent-2-ink text-[11px] tracking-[0.12em] uppercase">
               Reviewing now
             </p>
-            <h1 className="mt-1.5 text-[40px] leading-[1.1] font-semibold tracking-[-0.025em] tabular-nums">
+            <h1 className="mt-1.5 text-[clamp(26px,4vw,40px)] leading-[1.1] font-semibold tracking-[-0.025em] tabular-nums">
               {headline(analysis)}
             </h1>
           </div>
@@ -97,13 +97,13 @@ export function AnalysisProgress({ analysis, onCancel }: Props) {
           <button
             type="button"
             onClick={onCancel}
-            className="border-border hover:bg-foreground/5 focus-visible:outline-accent rounded-md border px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="border-border hover:bg-foreground/5 focus-visible:outline-accent min-h-11 rounded-md border px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             Cancel
           </button>
         </div>
 
-        <ol className="mt-6 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+        <ol className="mt-6 grid gap-[clamp(20px,2.5vw,40px)] sm:grid-cols-2 lg:grid-cols-4">
           {stages.map((s, index) => {
             const status = statusOf(index);
             return (
@@ -153,32 +153,38 @@ export function AnalysisProgress({ analysis, onCancel }: Props) {
         </ol>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-10 px-8 py-6 lg:grid-cols-[1.15fr_1fr]">
-        <section aria-label="Extracted contract text" className="flex min-h-0 flex-col">
+      <div className="block px-[clamp(18px,3vw,34px)] py-6 lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[1.15fr_1fr] lg:gap-[clamp(28px,3vw,56px)]">
+        <section
+          aria-label="Extracted contract text"
+          className="block lg:flex lg:min-h-0 lg:flex-col"
+        >
           <div className="text-foreground-muted mb-2.5 flex flex-none text-[11px] tracking-[0.12em] uppercase">
             <span>Extracted text — already yours to read</span>
             <span className="ml-auto tabular-nums">
               {analysis.document.text.length.toLocaleString()} characters
             </span>
           </div>
-          <div className="text-foreground/85 max-w-[640px] flex-1 overflow-y-auto pr-2 text-[14.5px] leading-[1.75] whitespace-pre-wrap">
+          <div className="text-foreground/85 text-[clamp(14.5px,1.05vw,16px)] leading-[1.75] whitespace-pre-wrap lg:flex-1 lg:overflow-y-auto lg:pr-2">
             {analysis.document.text}
           </div>
         </section>
 
-        <section aria-label="Findings so far" className="flex min-h-0 flex-col">
+        <section
+          aria-label="Findings so far"
+          className="mt-9 block lg:mt-0 lg:flex lg:min-h-0 lg:flex-col"
+        >
           <div className="text-foreground-muted mb-2.5 flex flex-none text-[11px] tracking-[0.12em] uppercase">
             <span>Landing as they are found</span>
             <span className="ml-auto tabular-nums">{findings.length} so far</span>
           </div>
-          <div className="flex min-h-0 max-w-[480px] flex-1 flex-col gap-5 overflow-y-auto pr-2">
+          <div className="flex flex-col gap-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2">
             {findings.length === 0 ? (
               <p className="text-foreground-muted max-w-[400px] text-sm leading-relaxed italic">
                 Nothing flagged yet. Each clause is read on its own against a fixed rubric, so
                 findings appear one at a time rather than all at the end.
               </p>
             ) : (
-              findings.map((finding) => <Landed key={anchorOf(finding)} finding={finding} />)
+              findings.map((finding) => <Landed key={findingKey(finding)} finding={finding} />)
             )}
           </div>
         </section>
@@ -205,10 +211,6 @@ function Landed({ finding }: { finding: Finding }) {
       <p className="text-foreground/85 mt-1.5 text-sm leading-relaxed">{finding.reason}</p>
     </article>
   );
-}
-
-function anchorOf(finding: Finding): string {
-  return `${finding.clause_id}-${finding.citation.start}`;
 }
 
 function pages(analysis: Analysis): string {

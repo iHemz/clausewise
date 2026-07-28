@@ -59,15 +59,15 @@ export function Uploader({ onAnalyze, error }: Props) {
   }
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-16 overflow-y-auto px-8 py-12 lg:grid-cols-[1.25fr_1fr]">
-      <div className="max-w-[620px]">
+    <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,380px),1fr))] items-start gap-[clamp(28px,4vw,64px)] px-[clamp(18px,3vw,34px)] py-[clamp(28px,5vw,52px)] lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+      <div className="max-w-[640px]">
         <p className="text-foreground-muted text-[11px] tracking-[0.12em] uppercase">
           Upload a contract
         </p>
-        <h1 className="mt-3 text-[52px] leading-[1.05] font-semibold tracking-[-0.025em] text-pretty">
+        <h1 className="mt-3 text-[clamp(32px,5vw,52px)] leading-[1.06] font-semibold tracking-[-0.025em] text-pretty">
           Every risky clause, flagged and quoted from the source.
         </h1>
-        <p className="mt-5 max-w-[540px] text-[17px] leading-relaxed">
+        <p className="mt-5 max-w-[54ch] text-[clamp(15px,1.3vw,17px)] leading-relaxed">
           Each finding carries a citation into the exact words it came from. If the model cannot
           quote what it is flagging, the finding is dropped rather than shown with an approximate
           source — and you are told how many were dropped.
@@ -93,7 +93,7 @@ export function Uploader({ onAnalyze, error }: Props) {
             handleFile(event.dataTransfer.files[0]);
           }}
           className={cn(
-            'mt-8 cursor-pointer rounded-md border border-dashed p-10 transition-colors',
+            'mt-8 cursor-pointer rounded-md border border-dashed p-[clamp(24px,4vw,40px)] transition-colors',
             isDragging
               ? 'border-accent bg-accent/5'
               : 'border-foreground/30 hover:border-foreground/50',
@@ -113,7 +113,7 @@ export function Uploader({ onAnalyze, error }: Props) {
                 event.stopPropagation();
                 inputRef.current?.click();
               }}
-              className="bg-accent hover:bg-accent-hover focus-visible:outline-accent rounded-md px-5 py-2.5 text-[15px] font-semibold text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="bg-accent hover:bg-accent-hover focus-visible:outline-accent min-h-11 rounded-md px-5 py-2.5 text-[15px] font-semibold text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               Choose a file
             </button>
@@ -134,7 +134,7 @@ export function Uploader({ onAnalyze, error }: Props) {
           </p>
         )}
 
-        <p className="text-foreground-muted mt-6 max-w-[540px] text-[13.5px] leading-relaxed italic">
+        <p className="text-foreground-muted mt-6 max-w-[54ch] text-[13.5px] leading-relaxed italic">
           Clausewise is not legal advice. Every finding is built to be checked against the source
           text — which is exactly what the citations are for.
         </p>
@@ -153,7 +153,7 @@ export function Uploader({ onAnalyze, error }: Props) {
         />
       </div>
 
-      <div className="max-w-[400px] pt-9">
+      <div className="max-w-[420px] lg:pt-9">
         <p className="text-foreground-muted text-[11px] tracking-[0.12em] uppercase">
           What happens after you upload
         </p>

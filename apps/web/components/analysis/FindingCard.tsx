@@ -9,6 +9,8 @@ interface Props {
   finding: Finding;
   isSelected: boolean;
   onSelect: () => void;
+  /** Narrow screens only: take the reader to the citation in the contract tab. */
+  onJumpToCitation?: () => void;
 }
 
 /**
@@ -18,7 +20,7 @@ interface Props {
  * only rule on the page is the one that marks the selected entry. The whole
  * entry is the hit target, because its job is to take you to the source text.
  */
-export function FindingCard({ finding, isSelected, onSelect }: Props) {
+export function FindingCard({ finding, isSelected, onSelect, onJumpToCitation }: Props) {
   // Disagreement between the two passes is shown, not averaged away — the
   // reviewer should know when the second opinion differed.
   const disputed = finding.judge_severity !== null && finding.judge_severity !== finding.severity;
@@ -72,6 +74,16 @@ export function FindingCard({ finding, isSelected, onSelect }: Props) {
           </p>
         )}
       </button>
+
+      {onJumpToCitation && (
+        <button
+          type="button"
+          onClick={onJumpToCitation}
+          className="border-accent text-accent-ink focus-visible:outline-accent mt-3 min-h-11 rounded-md border px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          Read it in the contract &rarr;
+        </button>
+      )}
     </li>
   );
 }

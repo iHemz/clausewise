@@ -1,5 +1,11 @@
 import type { Finding, Severity } from '@/lib/api';
-import { buildSegments, categoryLabel, dominantSeverity, findingAnchorId } from './highlight';
+import {
+  buildSegments,
+  categoryLabel,
+  dominantSeverity,
+  findingAnchorId,
+  findingKey,
+} from './highlight';
 
 const TEXT = 'The Supplier shall indemnify the Client without limitation.';
 
@@ -89,5 +95,39 @@ describe('categoryLabel', () => {
 
   it('falls back gracefully on an unknown category', () => {
     expect(categoryLabel('some_new_thing')).toBe('some new thing');
+  });
+});
+
+describe('findingKey', () => {
+  // The bug this pins: the anchor was used as a React key, and the model
+  // routinely flags two different risks in the same sentence — which produced
+  // duplicate keys and a stream of React warnings while findings landed.
+  const sameSpan = (title: string, category: Finding['category']): Finding => ({
+    ...finding(40, 58),
+    title,
+    category,
+  });
+
+  it('is distinct for two findings quoting the same words', () => {
+    const a = sameSpan('Uncapped indemnity', 'indemnity');
+    const b = sameSpan('Liability is not capped', 'unlimited_liability');
+
+    expect(findingAnchorId(a)).toBe(findingAnchorId(b));
+    expect(findingKey(a)).not.toBe(findingKey(b));
+  });
+
+  it('is distinct when only the title differs', () => {
+    const a = sameSpan('Uncapped indemnity', 'indemnity');
+    const b = sameSpan('Indemnity has no ceiling', 'indemnity');
+
+    expect(findingKey(a)).not.toBe(findingKey(b));
+  });
+
+  it('is stable for the same finding across renders', () => {
+    expect(findingKey(finding(40, 58))).toBe(findingKey(finding(40, 58)));
+  });
+
+  it('still separates findings on different spans', () => {
+    expect(findingKey(finding(0, 10))).not.toBe(findingKey(finding(40, 58)));
   });
 });

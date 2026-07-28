@@ -19,10 +19,16 @@ interface Props {
   findings: Finding[];
   /** The finding currently selected in the list, scrolled into view. */
   selectedId: string | null;
+  /**
+   * Whether this pane owns a scrollbar. False on narrow screens, where the
+   * page is the only scroller — a scroll box inside a page scroll is the thing
+   * that makes a contract impossible to follow on a phone.
+   */
+  scrolls?: boolean;
   onSelect: (finding: Finding) => void;
 }
 
-export function ContractView({ text, findings, selectedId, onSelect }: Props) {
+export function ContractView({ text, findings, selectedId, scrolls = true, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const segments = buildSegments(text, findings);
 
@@ -35,17 +41,22 @@ export function ContractView({ text, findings, selectedId, onSelect }: Props) {
   // ancestor happens to be positioned.
   useEffect(() => {
     const pane = containerRef.current;
-    if (!selectedId || !pane) return;
+    if (!selectedId || !pane || !scrolls) return;
     const target = pane.querySelector<HTMLElement>(`[data-anchor="${selectedId}"]`);
     if (!target) return;
     const delta = target.getBoundingClientRect().top - pane.getBoundingClientRect().top;
     pane.scrollTop = Math.max(0, pane.scrollTop + delta - pane.clientHeight / 2.6);
-  }, [selectedId]);
+  }, [selectedId, scrolls]);
 
   return (
     <div
       ref={containerRef}
-      className="max-w-[640px] flex-1 overflow-y-auto pr-2.5 text-[14.5px] leading-[1.8] whitespace-pre-wrap"
+      className={cn(
+        'whitespace-pre-wrap',
+        scrolls
+          ? 'flex-1 overflow-y-auto pr-2.5 text-[clamp(14.5px,1.05vw,16px)] leading-[1.8]'
+          : 'max-w-[40em] text-base leading-[1.8]',
+      )}
     >
       {segments.map((segment) => {
         const severity = dominantSeverity(segment.findings);
