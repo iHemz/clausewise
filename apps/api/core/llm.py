@@ -83,8 +83,9 @@ def provider_chain() -> list[Provider]:
     configured = [p for p in ordered if get_provider(p).is_configured()]
     if not configured:
         raise UpstreamError(
-            "No model provider is configured. Set ANTHROPIC_API_KEY (or XAI_API_KEY) "
-            "in the API's .env — see .env.example."
+            "No model provider is configured. Set at least one of "
+            "ANTHROPIC_API_KEY, GROQ_API_KEY or XAI_API_KEY — in the API's .env "
+            "locally, or with `fly secrets set` when deployed."
         )
     return configured
 

@@ -23,6 +23,10 @@ app = FastAPI(
     # Hide the interactive docs in production; they are a free map of the API.
     docs_url=None if settings.is_production else "/docs",
     redoc_url=None,
+    # The schema goes with the docs. Hiding `/docs` while leaving
+    # `/openapi.json` open is not hiding anything — the schema *is* the map, and
+    # the rendered page is only a viewer for it.
+    openapi_url=None if settings.is_production else "/openapi.json",
 )
 
 register_error_handlers(app)

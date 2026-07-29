@@ -5,6 +5,14 @@ result link, and the demo has to run anywhere without provisioning a database.
 The `Protocol` is what services depend on, so moving to Postgres means adding a
 second class and changing one line in `api/deps.py` — nothing above this layer
 knows the difference.
+
+**This is what pins the API to a single always-running process.** State lives in
+this worker, and an upload spans two requests — a POST that returns 202 and
+starts a background task, then GETs that poll it. Run two instances and the
+polls hit a process that never saw the POST; let the host stop an idle instance
+and the background task dies after the 202 has already been sent. `fly.toml`
+therefore sets one machine with auto-stop off, and both settings become
+unnecessary the moment this is backed by shared storage.
 """
 
 from __future__ import annotations
