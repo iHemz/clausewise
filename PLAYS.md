@@ -6,8 +6,8 @@ citation into the exact words it came from — click a finding and the contract 
 to and highlights the source. If the model cannot quote what it is flagging, the finding is
 **dropped** rather than shown with an approximate source, and the count of what was dropped
 is on screen.
-**Stage:** live. API on Fly (`clausewise-api.fly.dev`, single machine), web on Vercel
-(`<fill in the production URL>`). Next.js 16 / React 19 / Tailwind v4 + FastAPI / Python 3.12,
+**Stage:** live at **https://clausewise-henna.vercel.app** (API on Fly at
+`clausewise-api.fly.dev`, single machine). Next.js 16 / React 19 / Tailwind v4 + FastAPI / Python 3.12,
 Anthropic primary with Groq failover. 87 API tests, 16 web tests.
 
 **Through-line (shared across my products):** grounded, honest AI that shows its work.
@@ -65,7 +65,7 @@ actually probes.
 **Next steps.**
 - [ ] Record the 60-second Loom: upload the 2-page sample, click a finding, land on the
       source, mention the judge pass and the drop count
-- [ ] Fill in the live URL above and check both links from a fresh browser
+- [ ] Check the live link from a fresh browser and a phone before sending it anywhere
 - [ ] Cold outreach to Genie AI, Lawhive, Robin AI — link the demo and the repo in the DM
 - [ ] Portfolio case study at `/work/clausewise`, leading with the grounding gate
 - [ ] Rehearse the honest answer to "how good is it really?" — the eval numbers *and* why

@@ -76,18 +76,18 @@ it. Point it at the real domain:
 
 ```bash
 cd apps/api
-fly secrets set ALLOWED_ORIGINS="https://clausewise.vercel.app"
+fly secrets set ALLOWED_ORIGINS="https://clausewise-henna.vercel.app"
 ```
 
 Setting a secret restarts the machine on its own — no redeploy needed.
 
-Use your actual production domain. **Preview deployments get a fresh URL every
+The production domain is `clausewise-henna.vercel.app`. **Preview deployments get a fresh URL every
 time and will be blocked by CORS**, which is correct rather than broken: the
 alternative is a wildcard origin on an endpoint that spends money on every call.
 If you want previews working, add them explicitly:
 
 ```bash
-fly secrets set ALLOWED_ORIGINS="https://clausewise.vercel.app,https://clausewise-git-main-you.vercel.app"
+fly secrets set ALLOWED_ORIGINS="https://clausewise-henna.vercel.app,https://clausewise-git-main-ihemz.vercel.app"
 ```
 
 ---

@@ -1,5 +1,8 @@
 # Clausewise
 
+**Live: [clausewise-henna.vercel.app](https://clausewise-henna.vercel.app)** · sample
+contracts to try it with are in [`apps/api/evals/contracts/`](apps/api/evals/contracts/).
+
 Upload a contract. Get back every risky clause flagged with a severity, a plain-English
 reason, a suggested rewrite, and a **citation pointing at the exact source text** — click
 any finding and the contract pane scrolls to and highlights the words it came from.
