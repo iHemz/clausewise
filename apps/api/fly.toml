@@ -1,67 +1,41 @@
-# Fly config for the Clausewise API.
+# fly.toml app configuration file generated for clausewise-api on 2026-07-29T09:23:57+01:00
 #
-# Deployed from this directory: `cd apps/api && fly deploy`.
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
-# Two settings below look like premature caution and are not — they are load
-# bearing for how this API stores state. Results live in memory in the worker
-# process (`repositories/analyses.py`), and an upload is split across two
-# requests: a POST that returns 202 and starts a background task, then repeated
-# GETs that poll it. That shape only works on exactly one always-running
-# machine:
-#
-#   * More than one machine and the POST lands on A while the polls land on B,
-#     which has never heard of that analysis id. The client gets an intermittent
-#     404 that looks like a ghost bug and is really a routing one.
-#   * Auto-stop can suspend the machine while the background task is still
-#     running. The 202 has already been sent, so from Fly's side the machine
-#     looks idle; the analysis would die silently and the client would poll a
-#     result that is never coming.
-#
-# So: one machine, always on. To scale past that, give the repository a shared
-# backing store (Postgres or Redis) and these constraints lift — see the note in
-# `repositories/analyses.py`.
 
-app = "clausewise-api"
-primary_region = "lhr"
+app = 'clausewise-api'
+primary_region = 'lhr'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  ENVIRONMENT = "production"
-  LOG_LEVEL = "INFO"
-  # ALLOWED_ORIGINS and the provider keys are set with `fly secrets set` — see
-  # docs/deploy.md. They are not here because the Vercel URL does not exist
-  # until after the first API deploy.
+  ENVIRONMENT = 'production'
+  LOG_LEVEL = 'INFO'
 
 [http_service]
   internal_port = 8000
   force_https = true
-  # Both deliberate. See the note at the top of this file before changing either.
-  auto_stop_machines = false
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
-  processes = ["app"]
+  processes = ['app']
 
   [http_service.concurrency]
-    type = "requests"
-    # One analysis is several concurrent outbound model calls, so a machine is
-    # busy for far longer than a request count suggests. Kept low so Fly does
-    # not queue work behind a machine that is already saturated.
-    soft_limit = 15
+    type = 'requests'
     hard_limit = 25
+    soft_limit = 15
 
-  # `/health` is cheap and touches no provider, so it is safe to poll.
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "15s"
-    method = "GET"
-    path = "/health"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '15s'
+    method = 'GET'
+    path = '/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  # 512MB, not 256: pdfplumber holds a whole PDF while extracting, and the
-  # in-memory repository keeps up to 100 analyses with their full document text.
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 512
